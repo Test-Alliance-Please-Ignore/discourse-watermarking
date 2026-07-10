@@ -1,0 +1,41 @@
+discourse_watermarking:
+  user_fingerprint_enabled:
+    default: false
+    client: true
+  user_fingerprint_secret:
+    default: ""
+    secret: true
+    max: 512
+  user_fingerprint_enabled_groups:
+    default: ""
+    type: group_list
+    list_type: compact
+    allow_any: false
+    refresh: true
+  user_fingerprint_enabled_categories:
+    default: ""
+    type: category_list
+    refresh: true
+  user_fingerprint_strategy:
+    default: visual
+    type: enum
+    client: true
+    choices:
+      - visual
+      - text
+      - hybrid
+  user_fingerprint_visual_opacity:
+    default: 20
+    min: 1
+    max: 200
+    client: true
+  user_fingerprint_visual_density:
+    default: 32
+    min: 16
+    max: 96
+    client: true
+  user_fingerprint_text_enabled:
+    default: false
+    client: true
+  user_fingerprint_staff_only_decoder:
+    default: true

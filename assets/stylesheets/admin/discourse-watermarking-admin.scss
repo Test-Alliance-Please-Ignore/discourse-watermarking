@@ -1,0 +1,58 @@
+.discourse-watermarking {
+  .admin-config-area-card {
+    margin-block: 1em;
+  }
+
+  .watermark-decoder {
+    &__input {
+      width: 100%;
+      max-width: 40em;
+      font-family: var(--d-font-family--monospace);
+    }
+
+    &__submit {
+      margin-top: 0.5em;
+    }
+
+    &__result {
+      margin-top: 1em;
+      padding: 1em;
+      border: 1px solid var(--primary-low);
+      border-radius: var(--d-border-radius);
+
+      &--matched {
+        border-color: var(--success);
+      }
+
+      &--invalid_signature,
+      &--invalid_input {
+        border-color: var(--danger);
+      }
+    }
+  }
+
+  .watermark-diagnostics {
+    &__facts {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 0.25em 1.5em;
+
+      dt {
+        font-weight: bold;
+      }
+
+      dd {
+        margin: 0;
+      }
+    }
+
+    &__audits {
+      margin-top: 0.5em;
+
+      td,
+      th {
+        padding: 0.25em 1em 0.25em 0;
+      }
+    }
+  }
+}

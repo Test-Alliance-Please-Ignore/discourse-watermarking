@@ -1,0 +1,57 @@
+en:
+  admin_js:
+    admin:
+      site_settings:
+        categories:
+          discourse_watermarking: "Watermarking"
+  js:
+    discourse_watermarking:
+      title: "Watermarking"
+      decoder:
+        nav_label: "Decoder"
+        title: "Watermark decoder"
+        description: "Paste a recovered watermark payload (hex or binary bits from the extraction tool) or leaked text that may contain a zero-width fingerprint. Payloads are verified against the current secret and resolved to the originating user."
+        input_label: "Recovered payload or leaked text"
+        input_placeholder: "e.g. c51a2b3c4d5e6f70 — or paste the leaked text itself"
+        submit: "Decode"
+        result_title: "Result"
+        matched_user: "Matched user"
+        confidence: "Confidence"
+        matched_count: "Matching accounts"
+        status:
+          matched: "Match found. The signature is valid and the payload resolves to the account below."
+          no_match: "The signature is valid, but no current user account matches this payload. The account may have been deleted."
+          invalid_signature: "Invalid signature. The payload was forged, corrupted beyond recovery, or generated before the last secret rotation."
+          invalid_input: "Could not find a watermark payload in the input. Expected 14–16 hex characters, 56–64 bits, or text containing a zero-width fingerprint."
+          unsupported_version: "The payload reports an unsupported format version."
+      diagnostics:
+        title: "Status and diagnostics"
+        plugin_version: "Plugin version"
+        enabled: "Watermarking enabled"
+        strategy: "Strategy"
+        visual_active: "Visual overlay active"
+        text_active: "Text fingerprint active"
+        opacity: "Visual opacity (per-mille)"
+        density: "Cell size (px)"
+        secret_set: "Secret configured"
+        secret_fingerprint: "Secret fingerprint"
+        group_count: "Restricted to groups"
+        category_count: "Restricted to categories"
+        unrestricted: "no restriction"
+        staff_only_decoder: "Decoder restricted to admins"
+        recent_audits: "Recent decoder usage"
+        audit_when: "When"
+        audit_by: "By"
+        audit_status: "Result"
+        audit_matched: "Matched"
+        no_audits: "The decoder has not been used yet."
+      rotation:
+        title: "Secret rotation"
+        description: "Rotating the secret regenerates every user's watermark and permanently invalidates payloads recovered from older screenshots. Decode any pending evidence before rotating."
+        button: "Rotate secret"
+        confirm: "Rotate the watermarking secret? All previously rendered watermarks become undecodable. This cannot be undone."
+        done: "Secret rotated. New fingerprint: %{fingerprint}"
+      docs:
+        title: "Documentation"
+        readme: "Plugin README (architecture, recovery workflow, limitations)"
+        extract_tool: "Screenshot extraction tool: tools/extract_watermark.py in the plugin directory"

@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+*.log
+auto_generated/
+gems/
+__pycache__/

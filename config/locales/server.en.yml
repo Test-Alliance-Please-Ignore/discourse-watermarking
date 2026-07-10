@@ -1,0 +1,14 @@
+en:
+  site_settings:
+    user_fingerprint_enabled: "Enable per-user watermarking of rendered forum content. A secret is generated automatically the first time this is enabled."
+    user_fingerprint_secret: "Secret key used to derive watermark payloads. Rotating it invalidates every previously rendered watermark. Use the rotation control on the plugin admin page instead of editing this by hand."
+    user_fingerprint_enabled_groups: "Only watermark content shown to members of these groups. Leave empty to watermark all logged-in users."
+    user_fingerprint_enabled_categories: "Only watermark topics in these categories. Leave empty to watermark everywhere."
+    user_fingerprint_strategy: "Which watermarking techniques to apply: 'visual' renders an invisible screen overlay, 'text' fingerprints copied text, 'hybrid' does both."
+    user_fingerprint_visual_opacity: "Opacity of the visual watermark in per-mille (20 = 2%). Higher values are easier to recover from screenshots but more likely to be noticed."
+    user_fingerprint_visual_density: "Size of one watermark cell in CSS pixels. The full pattern tile is 8 cells wide. Larger cells survive image downscaling and recompression better; smaller cells survive aggressive cropping better."
+    user_fingerprint_text_enabled: "Allow the zero-width character text fingerprint. Zero-width characters are detectable by tech-savvy users and can affect copy/paste into some tools — read the plugin README before enabling."
+    user_fingerprint_staff_only_decoder: "When enabled (default), only administrators may use the watermark decoder. When disabled, moderators may use it as well. Secret rotation always requires an administrator."
+  discourse_watermarking:
+    errors:
+      secret_missing: "The watermarking secret is not configured."
