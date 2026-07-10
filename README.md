@@ -101,7 +101,7 @@ viewport:
 - The pattern is applied as a CSS `mask-image` over a
   `mix-blend-mode: difference` layer painted `rgb(0 0 k)`, where `k` is
   derived from `user_fingerprint_visual_opacity` (per-mille of 255; the
-  default 12 → k=3). Difference-blending a color that is zero in red and
+  default 8 → k=2). Difference-blending a color that is zero in red and
   green **subtracts exactly k from the blue channel** of whatever is
   underneath and touches nothing else, so the mark has the same constant
   amplitude on white, black, and every gray in between — no per-theme
@@ -189,9 +189,9 @@ Mobile is a first-class target, not an afterthought:
 ### Accessibility and visual impact
 
 The overlay carries `aria-hidden="true"`, no content, no pointer events, and
-shifts only the blue channel by ~3 levels (~0.35 levels of luminance) on the
-blue-yellow chroma axis — below the threshold where flat color patches
-become noticeable, on light and dark themes alike. It does not affect
+shifts only the blue channel by 1–2 levels (~0.2 levels of luminance) on the
+blue-yellow chroma axis — at or near the smallest difference an 8-bit
+display can represent, on light and dark themes alike. It does not affect
 contrast ratios, does not repaint (static element), and does not interfere
 with selection, scrolling, or assistive technology.
 
@@ -298,7 +298,7 @@ plugin's page under **Admin → Plugins**):
 | `user_fingerprint_enabled_groups` | *(empty = everyone logged in)* | Watermark only members of these groups. |
 | `user_fingerprint_enabled_categories` | *(empty = everywhere)* | Watermark only topics in these categories. |
 | `user_fingerprint_strategy` | `visual` | `visual`, `text`, or `hybrid`. |
-| `user_fingerprint_visual_opacity` | `12` | **Per-mille**, an integer, mapped to a blue-channel amplitude of `round(value/1000 × 255)` levels (12 → 3). Fractional values like `0.025` silently become zero signal — always use integers. 8–16 is the sweet spot (invisible, recovers from PNG and JPEG-q70 screenshots); raise toward 40–50 only for high-risk areas where downscale+recompression robustness beats subtlety. |
+| `user_fingerprint_visual_opacity` | `8` | **Per-mille**, an integer, mapped to a blue-channel amplitude of `round(value/1000 × 255)` levels (8 → 2). Fractional values like `0.025` silently become zero signal — always use integers. `4` (a single blue level — the 8-bit display floor, invisible on any display) still decodes from PNG and JPEG-q70 screenshots; raise toward 40–50 only for high-risk areas where downscale+recompression robustness beats subtlety. |
 | `user_fingerprint_visual_density` | `32` | Cell size in CSS px. Bigger cells → survives harsher recompression; smaller cells → survives tighter crops. |
 | `user_fingerprint_text_enabled` | `false` | Opt-in for the zero-width copy fingerprint. Read [Text fingerprinting](#text-fingerprinting-optional) first. |
 | `user_fingerprint_staff_only_decoder` | `true` | `true`: decoder is admin-only. `false`: moderators may also decode. |

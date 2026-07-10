@@ -89,10 +89,11 @@ export default {
         // so amplitude is carried by the blue value itself, not by element
         // opacity: painting rgb(0 0 k) subtracts exactly k from the blue
         // channel of whatever is underneath, on light and dark themes
-        // alike. Map the per-mille opacity setting to k: the default 12
-        // gives k=3, which is below the naked-eye threshold (a purely
-        // chromatic shift of ~3/255 with ~0.35 levels of luminance) yet
-        // extracts cleanly from PNG and JPEG-q70 screenshots.
+        // alike. Map the per-mille opacity setting to k: the default 8
+        // gives k=2, and even setting 4 (k=1 — a single blue level, the
+        // smallest difference an 8-bit display can show) still extracts
+        // from PNG and JPEG-q70 screenshots because the periodic fold
+        // averages the signal over every tile repetition.
         const amplitude = Math.max(
           1,
           Math.round((siteSettings.user_fingerprint_visual_opacity / 1000) * 255)
