@@ -47,18 +47,51 @@ RSpec.describe DiscourseWatermarking::Decoder do
     expect(described_class.decode(corrupted)[:status]).to eq(:matched)
   end
 
-  it "rejects a forged payload with a valid format but wrong tag" do
+  it "never resolves a forged payload with a valid format but wrong tag" do
     forged =
       DiscourseWatermarking::Payload.payload_for(user.id, secret: "attacker").unpack1("H*")
-    expect(described_class.decode(forged)[:status]).to eq(:invalid_signature)
+    # Bit-flip expansion can occasionally upgrade the verdict from
+    # :invalid_signature to :no_match (a random variant passing the 16-bit
+    # tag but matching nobody); what must never happen is a user match.
+    expect(described_class.decode(forged)[:status]).not_to eq(:matched)
   end
 
-  it "rejects a tampered user code" do
+  it "corrects a single flipped bit in the user code" do
     bytes = DiscourseWatermarking::Payload.tile_for(user.id).bytes
     bytes[3] ^= 0x10
-    expect(described_class.decode(bytes.pack("C*").unpack1("H*"))[:status]).to eq(
-      :invalid_signature,
-    )
+
+    result = described_class.decode(bytes.pack("C*").unpack1("H*"))
+    expect(result[:status]).to eq(:matched)
+    expect(result[:user]).to eq(user)
+    expect(result[:confidence]).to eq("corrected (1 flipped bit)")
+  end
+
+  it "corrects two flipped bits spanning user code and tag" do
+    bytes = DiscourseWatermarking::Payload.tile_for(user.id).bytes
+    bytes[3] ^= 0x10
+    bytes[7] ^= 0x02
+
+    result = described_class.decode(bytes.pack("C*").unpack1("H*"))
+    expect(result[:status]).to eq(:matched)
+    expect(result[:user]).to eq(user)
+    expect(result[:confidence]).to eq("corrected (2 flipped bits)")
+  end
+
+  it "repairs a corrupted reserved nibble without spending flip budget" do
+    bytes = DiscourseWatermarking::Payload.tile_for(user.id).bytes
+    bytes[1] |= 0x0f
+
+    result = described_class.decode(bytes.pack("C*").unpack1("H*"))
+    expect(result[:status]).to eq(:matched)
+    expect(result[:confidence]).to eq("high")
+  end
+
+  it "rejects a payload with too many flipped bits" do
+    bytes = DiscourseWatermarking::Payload.tile_for(user.id).bytes
+    bytes[3] ^= 0x10
+    bytes[5] ^= 0x01
+    bytes[7] ^= 0x02
+    expect(described_class.decode(bytes.pack("C*").unpack1("H*"))[:status]).not_to eq(:matched)
   end
 
   it "tries every candidate in pasted extraction tool output" do
@@ -95,9 +128,19 @@ RSpec.describe DiscourseWatermarking::Decoder do
     expect(described_class.decode(hex)[:status]).to eq(:no_match)
   end
 
+  it "keeps searching past a verified payload whose account is gone" do
+    other = Fabricate(:user)
+    gone_hex = tile_hex
+    user.destroy!
+
+    result = described_class.decode("#{gone_hex}\n#{DiscourseWatermarking::Payload.tile_hex_for(other.id)}")
+    expect(result[:status]).to eq(:matched)
+    expect(result[:user]).to eq(other)
+  end
+
   it "cannot decode payloads generated before a secret rotation" do
     hex = tile_hex
     SiteSetting.user_fingerprint_secret = SecureRandom.hex(32)
-    expect(described_class.decode(hex)[:status]).to eq(:invalid_signature)
+    expect(described_class.decode(hex)[:status]).not_to eq(:matched)
   end
 end

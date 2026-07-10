@@ -1,10 +1,15 @@
 // Full-viewport forensic watermark overlay.
 //
 // The element carries no content and passes every pointer event through, so
-// it is inert for interaction, selection, and assistive technology. The
-// pattern itself is applied as a mask over `var(--primary)`, which makes the
-// watermark track the active color palette automatically: slightly darker
-// than the background on light palettes, slightly lighter on dark palettes.
+// it is inert for interaction, selection, and assistive technology.
+//
+// The pattern is applied as a mask over pure blue, not a gray: at equal
+// numeric amplitude a blue-yellow chroma shift is far less perceptible than
+// a brightness shift (human contrast sensitivity is weakest on that axis),
+// and forum content is overwhelmingly neutral gray, so the extraction
+// tool's chroma plane (B - (R+G)/2) sees the mark at full strength while
+// text, borders, and scrollbars cancel out. Works on light and dark
+// palettes alike: both shift slightly toward blue where a bit is set.
 //
 // mask-image, mask-size, and opacity are set inline by the initializer
 // because they depend on the per-user payload and site settings.
@@ -18,7 +23,7 @@
   z-index: 9999;
   pointer-events: none;
   user-select: none;
-  background-color: var(--primary);
+  background-color: #00f;
   mask-repeat: repeat;
   mask-position: 0 0;
 }

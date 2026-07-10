@@ -18,27 +18,59 @@ module DiscourseWatermarking
     BITS_REGEX = /\A[01]{56}([01]{8})?\z/
     MAX_CANDIDATES = 64
 
+    # Screenshot extraction routinely delivers payloads with a few flipped
+    # bits, so after trying every candidate verbatim the decoder retries
+    # small Hamming-distance variants. Acceptance requires the 16-bit tag
+    # AND a 32-bit user-code match against a real user, so even ~10k trials
+    # keep the false-accept probability around 2^-48 per trial — the
+    # correction is statistically free.
+    ONE_FLIP_CANDIDATES = 32
+    TWO_FLIP_CANDIDATES = 8
+
+    # Byte 0 of a v1 payload is fixed (version nibble 1, reserved nibble 0),
+    # so bit corrections only make sense in the user code and tag.
+    FLIPPABLE_BITS = (8...(Payload::PAYLOAD_BYTES * 8)).to_a
+
     def self.decode(input)
       candidates = extract_payloads(input.to_s)
       return result(:invalid_input) if candidates.empty?
 
       unsupported_version = nil
-
-      candidates.each do |payload|
-        version = Payload.version_of(payload)
-        if version != Payload::VERSION
-          unsupported_version ||= version
-          next
+      usable =
+        candidates.filter_map do |payload|
+          version = Payload.version_of(payload)
+          if version != Payload::VERSION
+            unsupported_version ||= version
+            nil
+          else
+            canonicalize(payload)
+          end
         end
+      usable.uniq!
+
+      if usable.empty?
+        return result(:unsupported_version, version: unsupported_version) if unsupported_version
+        return result(:invalid_signature)
+      end
+
+      tried = {}
+      verified_without_user = false
+
+      each_variant(usable) do |payload, confidence|
+        next if tried[payload]
+        tried[payload] = true
         next if !Payload.verify(payload)
 
         matches = find_users_with_code(Payload.extract_user_code(payload))
 
         case matches.size
         when 0
-          return result(:no_match)
+          # A verified tag whose user is gone (or was derived under another
+          # secret): remember it, but keep searching — with bit-flip
+          # expansion a later variant can still be the real payload.
+          verified_without_user = true
         when 1
-          return result(:matched, user: matches.first, confidence: "high")
+          return result(:matched, user: matches.first, confidence: confidence)
         else
           # A 32-bit user code collision — astronomically unlikely, but
           # report honestly instead of picking one.
@@ -48,11 +80,45 @@ module DiscourseWatermarking
         end
       end
 
-      if unsupported_version && candidates.size == 1
-        result(:unsupported_version, version: unsupported_version)
-      else
-        result(:invalid_signature)
-      end
+      verified_without_user ? result(:no_match) : result(:invalid_signature)
+    end
+
+    # Yields payload variants in decreasing order of trustworthiness:
+    # every candidate verbatim, then 1-bit flips, then 2-bit flips of the
+    # best-ranked candidates (extraction output is ordered best first).
+    def self.each_variant(payloads)
+      payloads.each { |payload| yield payload, "high" }
+
+      payloads
+        .first(ONE_FLIP_CANDIDATES)
+        .each do |payload|
+          FLIPPABLE_BITS.each do |bit|
+            yield flip_bit(payload, bit), "corrected (1 flipped bit)"
+          end
+        end
+
+      payloads
+        .first(TWO_FLIP_CANDIDATES)
+        .each do |payload|
+          FLIPPABLE_BITS.combination(2) do |bit_a, bit_b|
+            yield flip_bit(flip_bit(payload, bit_a), bit_b), "corrected (2 flipped bits)"
+          end
+        end
+    end
+
+    # v1 payloads always carry version nibble 1 and reserved nibble 0, so a
+    # corrupted byte 0 can be repaired outright instead of spending flip
+    # budget on it.
+    def self.canonicalize(payload)
+      canonical = payload.dup
+      canonical.setbyte(0, Payload::VERSION << 4)
+      canonical
+    end
+
+    def self.flip_bit(payload, bit)
+      flipped = payload.dup
+      flipped.setbyte(bit / 8, flipped.getbyte(bit / 8) ^ (0x80 >> (bit % 8)))
+      flipped
     end
 
     def self.extract_payloads(input)

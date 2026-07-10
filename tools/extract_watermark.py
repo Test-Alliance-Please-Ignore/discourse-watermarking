@@ -7,6 +7,13 @@ tile in the screenshot is a noisy observation of the same 64-bit payload:
 folding the image at the tile period and averaging cancels the page content
 (text, images) and amplifies the watermark.
 
+Since plugin version 0.2 the overlay is pure blue, so the mark lives almost
+entirely in the blue-vs-gray chroma plane (B - (R+G)/2). Forum content is
+overwhelmingly neutral gray — text, borders, scrollbars vanish in that
+plane — which is why it is analyzed first. The luminance plane is still
+swept afterwards so screenshots made under the old gray overlay keep
+decoding.
+
 Usage:
     python3 tools/extract_watermark.py screenshot.png [--cell 32] [--min-scale 0.5] [--max-scale 4]
 
@@ -14,10 +21,13 @@ Usage:
                  user_fingerprint_visual_density (default 32)
     --min-scale / --max-scale
                  range of device-pixel-ratio / zoom / resize factors to try
+    --plane      chroma | luma | auto (default auto: both, merged)
 
-The tool prints candidate 16-character hex payloads (best first). Paste them
-into the admin decoder at /admin/plugins/discourse-watermarking/watermarking;
-the cryptographic integrity tag identifies the correct candidate.
+The tool prints candidate 16-character hex payloads (best first). Paste the
+whole list into the admin decoder at
+/admin/plugins/discourse-watermarking/watermarking; the cryptographic
+integrity tag identifies the correct candidate, tolerating a few flipped
+bits.
 
 Requires: pillow, numpy  (pip install pillow numpy)
 """
@@ -123,7 +133,13 @@ def bits_to_hex(bits):
 
 
 def two_means_split(values):
-    """Split 64 cell values into two clusters; returns (bits, separation)."""
+    """Split 64 cell values into two clusters; returns (bits, gap).
+
+    The gap is the absolute distance between the cluster means. Scoring by
+    the gap (not a gap/spread ratio) matters: folds at a wrong period
+    produce nearly uniform tiles whose tiny accidental splits have huge
+    ratios but negligible gaps, and they would otherwise outrank the real
+    payload."""
     lo, hi = values.min(), values.max()
     if hi - lo < 1e-12:
         return None, 0.0
@@ -141,8 +157,7 @@ def two_means_split(values):
     # a lopsided split is a content artifact, not a watermark.
     if len(low) < 12 or len(high) < 12:
         return None, 0.0
-    separation = (high.mean() - low.mean()) / (low.std() + high.std() + 1e-9)
-    return (values > threshold).astype(int), separation
+    return (values > threshold).astype(int), high.mean() - low.mean()
 
 
 def candidates_from_grid(means):
@@ -154,7 +169,7 @@ def candidates_from_grid(means):
     results = []
     for grid in orientations(means):
         for polarity in (1, -1):
-            bits, separation = two_means_split(grid.flatten() * polarity)
+            bits, gap = two_means_split(grid.flatten() * polarity)
             if bits is None:
                 continue
             bit_grid = bits.reshape(GRID, GRID)
@@ -169,13 +184,25 @@ def candidates_from_grid(means):
             # A reading that matches the sync pattern at many shifts is a
             # periodic content artifact, not a payload.
             if 0 < len(matches) <= 2:
-                results.extend((separation, match) for match in matches)
+                results.extend((gap, match) for match in matches)
     return results
 
 
-def extract(path, cell, min_scale, max_scale, bg_radius=None, erode_radius=None):
-    image = Image.open(path).convert("L")
-    img = np.asarray(image, dtype=np.float64)
+def analysis_planes(rgb, plane):
+    """The 2D planes to sweep, most promising first.
+
+    chroma (B - (R+G)/2) isolates the blue overlay and cancels neutral-gray
+    page content; luma covers screenshots from the pre-0.2 gray overlay."""
+    planes = []
+    if plane in ("auto", "chroma"):
+        planes.append(rgb[..., 2] - 0.5 * (rgb[..., 0] + rgb[..., 1]))
+    if plane in ("auto", "luma"):
+        planes.append(rgb @ np.array([0.299, 0.587, 0.114]))
+    return planes
+
+
+def extract(path, cell, min_scale, max_scale, bg_radius=None, erode_radius=None, plane="auto"):
+    rgb = np.asarray(Image.open(path).convert("RGB"), dtype=np.float64)
 
     # Mask parameters depend on the effective resolution of the screenshot
     # (full-DPR screenshots vs. downscaled re-shares), so sweep two presets
@@ -191,28 +218,29 @@ def extract(path, cell, min_scale, max_scale, bg_radius=None, erode_radius=None)
         np.round(np.arange(min_scale, max_scale + 1e-9, 0.125) * base_period).astype(int)
     )
 
-    for mask_bg_radius, mask_erode_radius in presets:
-        keep = content_mask(img, mask_bg_radius, erode_radius=mask_erode_radius)
+    for img in analysis_planes(rgb, plane):
+        for mask_bg_radius, mask_erode_radius in presets:
+            keep = content_mask(img, mask_bg_radius, erode_radius=mask_erode_radius)
 
-        for period in scales:
-            if period < GRID * 4:
-                continue
-            tile, repetitions = fold(img, period, keep)
-            if tile is None or repetitions < 0.9:
-                continue
+            for period in scales:
+                if period < GRID * 4:
+                    continue
+                tile, repetitions = fold(img, period, keep)
+                if tile is None or repetitions < 0.9:
+                    continue
 
-            # The folded tile is periodic, so remove the residual page
-            # background with a wrap-around low-pass and keep only
-            # cell-scale structure.
-            tile = tile - box_blur(tile, max(2, period // 6), mode="wrap")
+                # The folded tile is periodic, so remove the residual page
+                # background with a wrap-around low-pass and keep only
+                # cell-scale structure.
+                tile = tile - box_blur(tile, max(2, period // 6), mode="wrap")
 
-            step = max(1, period // (GRID * 8))
-            for off_y, off_x in itertools.product(range(0, period // GRID, step), repeat=2):
-                means = cell_means(tile, off_y, off_x)
-                for separation, hex_payload in candidates_from_grid(means):
-                    weighted = separation * np.sqrt(repetitions)
-                    if hex_payload not in found or found[hex_payload] < weighted:
-                        found[hex_payload] = weighted
+                step = max(1, period // (GRID * 8))
+                for off_y, off_x in itertools.product(range(0, period // GRID, step), repeat=2):
+                    means = cell_means(tile, off_y, off_x)
+                    for gap, hex_payload in candidates_from_grid(means):
+                        weighted = gap * np.sqrt(repetitions)
+                        if hex_payload not in found or found[hex_payload] < weighted:
+                            found[hex_payload] = weighted
 
     return sorted(found.items(), key=lambda item: -item[1])
 
@@ -225,10 +253,18 @@ def main():
     parser.add_argument("--max-scale", type=float, default=4.0)
     parser.add_argument("--bg-radius", type=int, default=None, help="background estimation blur radius in px (default: sweep 12 and 6)")
     parser.add_argument("--erode", type=int, default=None, help="content mask erosion radius in px (default: sweep 3 and 1)")
-    parser.add_argument("--top", type=int, default=8, help="number of candidates to print")
+    parser.add_argument("--top", type=int, default=12, help="number of candidates to print")
+    parser.add_argument(
+        "--plane",
+        choices=("auto", "chroma", "luma"),
+        default="auto",
+        help="color plane to analyze (default: chroma then luma, merged)",
+    )
     args = parser.parse_args()
 
-    results = extract(args.image, args.cell, args.min_scale, args.max_scale, args.bg_radius, args.erode)
+    results = extract(
+        args.image, args.cell, args.min_scale, args.max_scale, args.bg_radius, args.erode, args.plane
+    )
 
     if not results:
         print("No candidate payload found. Try adjusting --cell to match the")

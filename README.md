@@ -49,7 +49,7 @@ page.
                      │ Client                                       │
                      │ initializers/discourse-watermarking.js       │
                      │   • fixed full-viewport overlay div          │
-                     │   • SVG mask tile + background: var(--primary)│
+                     │   • SVG mask tile over pure-blue background  │
                      │   • copy-event zero-width fingerprint (opt.) │
                      └──────────────┬───────────────────────────────┘
                                     │ screenshot leaks
@@ -99,22 +99,30 @@ viewport:
 - A `1` bit renders a rounded, slightly blurred filled square; a `0` bit
   renders nothing.
 - The pattern is applied as a CSS `mask-image` over
-  `background-color: var(--primary)` at ~2% opacity
-  (`user_fingerprint_visual_opacity`, in per-mille). Because `--primary` is
-  the theme's text color, the mark is automatically slightly darker than the
-  background on light palettes (e.g. Marigold) and slightly lighter on dark
-  palettes — no per-theme configuration, and it tracks any palette or theme
-  component (Foundation included) that uses standard Discourse color
-  variables.
+  `background-color: #00f` (pure blue) at ~2% opacity
+  (`user_fingerprint_visual_opacity`, in per-mille). Blue is deliberate: the
+  signal rides the blue-yellow **chroma** axis, where human contrast
+  sensitivity is weakest — at equal amplitude a chroma shift is far less
+  perceptible than the brightness shift a gray overlay produces. It also
+  makes recovery *easier*: forum content is overwhelmingly neutral gray, so
+  in the extraction tool's chroma plane (`B − (R+G)/2`) text, borders, and
+  scrollbars cancel out while the watermark survives at full strength.
+  Works identically on light and dark palettes (both shift slightly toward
+  blue where a bit is set), with no per-theme configuration.
 
 Why large soft blocks instead of fine dots or text? Because everything that
 happens to a leaked screenshot — device downscaling, messaging-app
 recompression, JPEG quantization, screen-to-camera capture — is a **low-pass
 process**: it destroys fine detail and preserves coarse, low-spatial-frequency
-structure. Large blocks *are* low-frequency structure. In verification runs,
-the supplied extraction tool recovers the exact payload from a synthetic
-screenshot after 50% downscaling **and** JPEG quality-70 recompression, in
-both light and dark themes.
+structure. Large blocks *are* low-frequency structure. In verification runs
+against real dark-theme forum screenshots, the extraction tool places the
+exact payload at rank 1 from lossless captures and from JPEG quality-70
+recompression at the default 2% opacity. One honest limit: heavy *combined*
+degradation (50% downscale **plus** JPEG q70) deterministically rounds a
+~2-level chroma signal away on flat regions — surviving that needs opacity
+around 4–5%, which trades away invisibility. Raise
+`user_fingerprint_visual_opacity` for high-risk areas if that scenario
+matters more than subtlety.
 
 The 64-bit tile layout (row-major in the 8×8 grid):
 
@@ -177,15 +185,17 @@ Mobile is a first-class target, not an afterthought:
 ### Accessibility and visual impact
 
 The overlay carries `aria-hidden="true"`, no content, no pointer events, and
-~2% opacity. It does not affect contrast ratios meaningfully (a 2% shift of
-the primary color over the background), does not repaint (static element),
-and does not interfere with selection, scrolling, or assistive technology.
+~2% opacity on the blue-yellow chroma axis — a few brightness levels of blue
+shift with no meaningful luminance change, below the threshold where flat
+color patches become noticeable. It does not affect contrast ratios, does
+not repaint (static element), and does not interfere with selection,
+scrolling, or assistive technology.
 
 ## Why this approach — alternatives considered
 
 | Approach | Verdict | Reasoning |
 |---|---|---|
-| **Tiled low-frequency block grid via CSS mask (chosen)** | ✅ | Survives downscale/JPEG (verified); theme-adaptive via `var(--primary)`; one inert DOM node; crop-tolerant through periodicity; trivial to disable-detect… nothing is perfect |
+| **Tiled low-frequency block grid via CSS mask, blue-chroma carrier (chosen)** | ✅ | Survives JPEG (verified on live screenshots); near-invisible (chroma axis); gray page content cancels out of the recovery plane; one inert DOM node; crop-tolerant through periodicity; trivial to disable-detect… nothing is perfect |
 | Fine dot patterns / pixel-level steganography | ❌ | Destroyed by the very first downscale or JPEG pass (confirmed experimentally — this design started with 2–3 px dots and they did not survive); DPR scaling smears single pixels |
 | Repeated semi-transparent username text | ❌ | Trivially recognized and removed; requires OCR-resistant obfuscation; visually intrusive at recoverable opacities; embeds PII |
 | Luminance modulation of the page background color itself | ⚠️ Rejected | Same signal class as the chosen approach but requires rewriting theme backgrounds (fights themes/palettes instead of riding on them) and breaks on images/full-bleed content; the mask overlay achieves the same spectral properties non-invasively |
@@ -284,7 +294,7 @@ plugin's page under **Admin → Plugins**):
 | `user_fingerprint_enabled_groups` | *(empty = everyone logged in)* | Watermark only members of these groups. |
 | `user_fingerprint_enabled_categories` | *(empty = everywhere)* | Watermark only topics in these categories. |
 | `user_fingerprint_strategy` | `visual` | `visual`, `text`, or `hybrid`. |
-| `user_fingerprint_visual_opacity` | `20` | Per-mille (20 = 2%). 10–30 is invisible-to-subtle; raise for high-risk areas. |
+| `user_fingerprint_visual_opacity` | `20` | **Per-mille**, an integer: 20 = 2%. Values below ~5 fall under 8-bit display quantization and render *nothing* (fractional values like `0.025` silently become zero signal). 15–25 is the sweet spot; raise toward 40–50 only for high-risk areas where downscale+recompression robustness beats subtlety. |
 | `user_fingerprint_visual_density` | `32` | Cell size in CSS px. Bigger cells → survives harsher recompression; smaller cells → survives tighter crops. |
 | `user_fingerprint_text_enabled` | `false` | Opt-in for the zero-width copy fingerprint. Read [Text fingerprinting](#text-fingerprinting-optional) first. |
 | `user_fingerprint_staff_only_decoder` | `true` | `true`: decoder is admin-only. `false`: moderators may also decode. |
@@ -320,12 +330,17 @@ Everything defaults to **off / most restrictive**.
 
    Options: `--cell N` if you changed `user_fingerprint_visual_density`,
    `--min-scale/--max-scale` for unusual DPR/zoom/resizes, `--top N` for more
-   candidates. Copy the whole output block.
+   candidates, `--plane chroma|luma` to pin the analysis plane (default:
+   both). Copy the whole output block. Cropping the screenshot to a
+   content-light region (margins, empty columns) often sharpens the result.
 3. **Copied text:** skip the tool — paste the text itself.
 4. Open **Admin → Plugins → Watermarking** and paste into the decoder. It
    accepts hex (14/16 chars), raw bits (56/64), text containing a zero-width
    fingerprint, or the tool's entire output (each candidate is tried; the
-   cryptographic tag picks the right one).
+   cryptographic tag picks the right one). Extraction noise is tolerated:
+   the decoder also searches 1- and 2-bit variants of each candidate, and
+   reports `corrected (N flipped bits)` as the confidence when that path
+   found the match.
 5. Read the result:
    - **Match found** — signature valid, resolved to an account, confidence
      `high` (or `ambiguous` with all accounts listed in the astronomically
