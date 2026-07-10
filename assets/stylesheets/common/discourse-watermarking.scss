@@ -30,3 +30,20 @@
   mask-repeat: repeat;
   mask-position: 0 0;
 }
+
+// Print / save-as-PDF coverage. Fixed-position elements repeat on every
+// printed page, so the tile marks the whole document. Print engines do not
+// reliably honor difference blending — if it were dropped, the near-black
+// rgb(0 0 k) paint would appear as plainly visible dark blobs — so printing
+// falls back to a faint normal-blend blue veil over the (white) page.
+// !important is required to beat the inline background-color set by the
+// initializer. Best-effort: browsers only print backgrounds when the user
+// enables them, and print-color-adjust asks for them to be kept as-is.
+@media print {
+  .discourse-watermark-overlay {
+    mix-blend-mode: normal;
+    background-color: #00f !important;
+    opacity: 0.012;
+    print-color-adjust: exact;
+  }
+}

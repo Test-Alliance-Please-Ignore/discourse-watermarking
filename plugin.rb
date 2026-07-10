@@ -28,6 +28,7 @@ after_initialize do
   require_relative "lib/discourse_watermarking/zero_width"
   require_relative "lib/discourse_watermarking/eligibility"
   require_relative "lib/discourse_watermarking/decoder"
+  require_relative "lib/discourse_watermarking/text_injector"
 
   # route: /admin/plugins/discourse-watermarking
   add_admin_route("discourse_watermarking.title", "discourse-watermarking", use_new_show_route: true)
@@ -55,6 +56,67 @@ after_initialize do
     :watermarking_enabled,
     include_condition: -> { DiscourseWatermarking::Eligibility.watermark_user?(scope.user) },
   ) { DiscourseWatermarking::Eligibility.category_enabled?(object.topic&.category_id) }
+
+  # Server-side text fingerprinting: content fetched without executing the
+  # client JavaScript (API keys, scrapers, RSS readers) would otherwise be
+  # completely unmarked. The wrapper preserves all core cooked logic
+  # (hidden-post placeholders, localization) by calling super.
+  module ::DiscourseWatermarking::CookedFingerprint
+    def cooked
+      DiscourseWatermarking::TextInjector.inject(
+        super,
+        scope&.user,
+        category_id: object.topic&.category_id,
+      )
+    end
+  end
+
+  reloadable_patch do
+    ::BasicPostSerializer.prepend(::DiscourseWatermarking::CookedFingerprint)
+  end
+
+  # RSS/Atom feeds render post HTML through view templates, not serializers,
+  # so the fingerprint is added to the response body instead. Every CDATA
+  # section gets one — invisible to feed readers either way. When
+  # watermarking is scoped to categories, only single-topic feeds can be
+  # attributed to a category, so list feeds are left unmarked rather than
+  # marking content outside the configured scope.
+  module ::DiscourseWatermarking::FeedFingerprint
+    def self.prepended(base)
+      base.after_action :discourse_watermarking_mark_feed
+    end
+
+    def discourse_watermarking_mark_feed
+      return if !request.format&.rss?
+      return if response.body.blank?
+
+      category_id =
+        if DiscourseWatermarking::Eligibility.scoped_to_categories?
+          topic = instance_variable_get(:@topic_view)&.topic
+          return if topic.nil?
+          topic.category_id
+        end
+
+      marked =
+        DiscourseWatermarking::TextInjector.inject(
+          response.body,
+          current_user,
+          category_id: category_id,
+          append_fallback: false,
+        )
+      response.body = marked if marked != response.body
+    end
+  end
+
+  reloadable_patch { ::ApplicationController.prepend(::DiscourseWatermarking::FeedFingerprint) }
+
+  # Enforce the "stored content never carries a fingerprint" invariant:
+  # text copied from a marked page and pasted (or quoted) into the composer
+  # would otherwise persist the copier's fingerprint inside the new post,
+  # and a later leak of that post could be attributed to the wrong user.
+  add_model_callback(:post, :before_save) do
+    self.raw = DiscourseWatermarking::TextInjector.scrub(raw) if raw_changed?
+  end
 
   # Generate a secret automatically the first time the plugin is enabled so
   # that a forgotten secret never results in a weak or empty key.

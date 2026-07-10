@@ -17,18 +17,31 @@ screenshots made under the old gray overlay keep decoding.
 
 Usage:
     python3 tools/extract_watermark.py screenshot.png [--cell 32] [--min-scale 0.5] [--max-scale 4]
+    python3 tools/extract_watermark.py leak1.png leak2.png ...   # stack (see below)
 
     --cell       cell size in CSS px configured in
                  user_fingerprint_visual_density (default 32)
     --min-scale / --max-scale
                  range of device-pixel-ratio / zoom / resize factors to try
     --plane      chroma | luma | auto (default auto: both, merged)
+    --stack      force multi-screenshot stacking mode (auto-enabled when more
+                 than one image is given)
 
 The tool prints candidate 16-character hex payloads (best first). Paste the
 whole list into the admin decoder at
 /admin/plugins/discourse-watermarking/watermarking; the cryptographic
 integrity tag identifies the correct candidate, tolerating a few flipped
 bits.
+
+Stacking mode is for hard leaks — short crops, a big saturated image over the
+content, at the lowest opacity — where a single screenshot will not decode.
+Give it two or more screenshots FROM THE SAME USER (they all carry the same
+payload). It pools noisy 8x8 reads from every image, locks each to the
+canonical orientation using the known sync byte and version nibble as a
+template (rather than reading those bits from noise), averages only the reads
+that lock cleanly, and enumerates the few genuinely uncertain payload cells.
+It reports a sync-lock quality: ~1.0 means the watermark was found and
+aligned; below ~0.5 means no recoverable watermark is present.
 
 Requires: pillow, numpy  (pip install pillow numpy)
 """
@@ -46,6 +59,17 @@ except ImportError:
 SYNC_BYTE = 0xC5
 PAYLOAD_VERSION = 1
 GRID = 8
+
+# Known-constant cells of a v1 tile, used by stacking mode to lock each noisy
+# read to the canonical orientation and roll. Row 0 is the sync byte 0xC5;
+# row 1 is byte 1 = (VERSION << 4) = 0x10 (version nibble 1, reserved nibble
+# 0). Matching against these 16 known bits is far more reliable than reading
+# the sync out of a near-noise-floor signal.
+KNOWN_TILE = np.full((GRID, GRID), np.nan)
+KNOWN_TILE[0] = [(SYNC_BYTE >> i) & 1 for i in range(7, -1, -1)]
+KNOWN_TILE[1] = [(((PAYLOAD_VERSION << 4) & 0xFF) >> i) & 1 for i in range(7, -1, -1)]
+KNOWN_MASK = ~np.isnan(KNOWN_TILE)
+KNOWN_SIGN = np.where(KNOWN_MASK, KNOWN_TILE * 2 - 1, 0.0)
 
 
 def box_blur_1d(img, radius, axis, mode="reflect"):
@@ -190,15 +214,25 @@ def candidates_from_grid(means):
 
 
 def analysis_planes(rgb, plane):
-    """The 2D planes to sweep, most promising first.
+    """The 2D planes to sweep, most promising first, each paired with a gate
+    mask of pixels that are allowed to contribute to the fold.
 
     chroma (B - (R+G)/2) isolates the blue overlay and cancels neutral-gray
-    page content; luma covers screenshots from the pre-0.2 gray overlay."""
+    page content; luma covers screenshots from the pre-0.2 gray overlay.
+
+    The chroma plane is additionally gated to near-neutral pixels: a
+    saturated embedded image (an avatar, a meme, a rainbow onebox) carries
+    strong chroma of its own that would otherwise swamp the 1-2 level
+    watermark it sits under. Rejecting colored pixels keeps only the page
+    background and text — exactly where the mark lives — which is decisive
+    on short, image-heavy screenshots."""
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
     planes = []
     if plane in ("auto", "chroma"):
-        planes.append(rgb[..., 2] - 0.5 * (rgb[..., 0] + rgb[..., 1]))
+        neutral = (np.abs(r - g) < 6) & (np.abs(np.maximum(r, g) - b) < 10)
+        planes.append((b - 0.5 * (r + g), neutral))
     if plane in ("auto", "luma"):
-        planes.append(rgb @ np.array([0.299, 0.587, 0.114]))
+        planes.append((rgb @ np.array([0.299, 0.587, 0.114]), None))
     return planes
 
 
@@ -249,9 +283,11 @@ def extract(path, cell, min_scale, max_scale, bg_radius=None, erode_radius=None,
     # and decode at the refined peak as well.
     fine_halfwidth = max(2, base_period // 16)
 
-    for img in analysis_planes(rgb, plane):
+    for img, gate in analysis_planes(rgb, plane):
         for mask_bg_radius, mask_erode_radius in presets:
             keep = content_mask(img, mask_bg_radius, erode_radius=mask_erode_radius)
+            if gate is not None:
+                keep = keep & gate
 
             spreads = {}
             for period in scales:
@@ -286,9 +322,158 @@ def extract(path, cell, min_scale, max_scale, bg_radius=None, erode_radius=None,
     return sorted(found.items(), key=lambda item: -item[1])
 
 
+def soft_reads(rgb, cell, min_scale, max_scale, presets):
+    """Collect many normalized 8x8 soft reads (real-valued cell grids) of one
+    image on the neutral-gated chroma plane. Unlike extract(), which commits
+    each fold to hard 0/1 bits immediately, stacking needs the soft values so
+    it can average across reads and images before thresholding."""
+    grids = []
+    base_period = cell * GRID
+    coarse_scales = np.unique(
+        np.round(np.arange(min_scale, max_scale + 1e-9, 0.125) * base_period).astype(int)
+    )
+    # Around the coarse peak, the exact tile period must be found to the pixel:
+    # folding even one or two pixels off the true period smears the tile and
+    # rotates the recovered payload, which stacking cannot average out. So
+    # after the coarse sweep locates the peak (within one coarse step), sweep
+    # every integer period across a band wide enough to bracket it, and pool
+    # reads from the strongest few. A discrete "top-N coarse periods" sample
+    # is not enough — it misses the true period and locks onto a wrong roll.
+    band = base_period // 4
+
+    # Chroma only: the stack technique locks onto the blue-channel mark, and
+    # the neutral gate paired with the chroma plane is what rejects the
+    # saturated image that makes these leaks hard in the first place.
+    for img, gate in analysis_planes(rgb, "chroma"):
+        for mask_bg_radius, mask_erode_radius in presets:
+            keep = content_mask(img, mask_bg_radius, erode_radius=mask_erode_radius)
+            if gate is not None:
+                keep = keep & gate
+
+            coarse_spread = {}
+            for period in coarse_scales:
+                if period < GRID * 4:
+                    continue
+                tile, repetitions, spread = folded_tile(img, keep, period)
+                if tile is not None:
+                    coarse_spread[period] = spread
+            if not coarse_spread:
+                continue
+            peak = max(coarse_spread, key=coarse_spread.get)
+
+            dense = {}
+            for period in range(max(GRID * 4, peak - band), peak + band + 1):
+                tile, repetitions, spread = folded_tile(img, keep, period)
+                if tile is not None:
+                    dense[period] = (spread, tile)
+
+            for period in sorted(dense, key=lambda p: -dense[p][0])[:3]:
+                _, tile = dense[period]
+                step = max(1, period // (GRID * 8))
+                for off_y, off_x in itertools.product(range(0, period // GRID, step), repeat=2):
+                    means = cell_means(tile, off_y, off_x)
+                    means = means - means.mean()
+                    scale = means.std()
+                    if scale > 1e-9:
+                        grids.append(means / scale)
+    return grids
+
+
+def lock_to_sync(grid):
+    """Return (correlation, canonical_grid): the orientation, mirror, polarity,
+    and cyclic roll of `grid` that best matches the known sync+version
+    template, and how well it matched (1.0 = perfect)."""
+    best_corr = -np.inf
+    best_grid = None
+    for k in range(4):
+        rotated = np.rot90(grid, k)
+        for oriented in (rotated, np.fliplr(rotated)):
+            for polarity in (1.0, -1.0):
+                signed = polarity * oriented
+                for roll_y in range(GRID):
+                    for roll_x in range(GRID):
+                        rolled = np.roll(np.roll(signed, roll_y, axis=0), roll_x, axis=1)
+                        corr = (rolled * KNOWN_SIGN)[KNOWN_MASK].mean()
+                        if corr > best_corr:
+                            best_corr = corr
+                            best_grid = rolled
+    return best_corr, best_grid
+
+
+def stack_extract(
+    paths,
+    cell,
+    min_scale,
+    max_scale,
+    bg_radius=None,
+    erode_radius=None,
+    keep_fraction=0.10,
+    keep_floor=24,
+    max_uncertain=10,
+    max_candidates=48,
+):
+    """Recover one payload shared by several same-user screenshots.
+
+    Pools soft reads from every image, locks each to the canonical frame via
+    the sync template, averages only the cleanest-locking reads, then reads
+    the payload and enumerates flips of the least-confident cells. Returns
+    (ranked_hex_candidates, sync_quality).
+
+    Only the top `keep_fraction` of reads by sync-lock quality are averaged:
+    the reads that lock cleanest carry the payload, and admitting the rest
+    only adds noise (empirically each 5% loosening costs ~1 bit of accuracy).
+    `keep_floor` guarantees a usable average when few reads are available."""
+    if bg_radius is not None or erode_radius is not None:
+        presets = [(bg_radius or 12, 3 if erode_radius is None else erode_radius)]
+    else:
+        presets = [(12, 3), (6, 1), (18, 4)]
+
+    grids = []
+    for path in paths:
+        rgb = np.asarray(Image.open(path).convert("RGB"), dtype=np.float64)
+        grids.extend(soft_reads(rgb, cell, min_scale, max_scale, presets))
+    if not grids:
+        return [], 0.0
+
+    locked = sorted((lock_to_sync(grid) for grid in grids), key=lambda cg: -cg[0])
+    keep_count = min(len(locked), max(keep_floor, round(len(locked) * keep_fraction)))
+    kept = [grid for _, grid in locked[:keep_count]]
+    average = np.mean(kept, axis=0)
+    sync_quality = float((average * KNOWN_SIGN)[KNOWN_MASK].mean())
+
+    unknown = [(y, x) for y in range(GRID) for x in range(GRID) if not KNOWN_MASK[y, x]]
+    order = sorted(range(len(unknown)), key=lambda i: abs(average[unknown[i]]))
+    flip_cells = [unknown[i] for i in order[: min(max_uncertain, len(unknown))]]
+
+    base = KNOWN_TILE.copy()
+    for cell_yx in unknown:
+        base[cell_yx] = 1.0 if average[cell_yx] > 0 else 0.0
+
+    candidates = []
+    for combo in itertools.product((0, 1), repeat=len(flip_cells)):
+        grid = base.copy()
+        cost = 0.0
+        for bit, cell_yx in zip(combo, flip_cells):
+            grid[cell_yx] = bit
+            if bit != (1 if average[cell_yx] > 0 else 0):
+                cost += abs(average[cell_yx])
+        candidates.append((cost, bits_to_hex(grid.flatten().astype(int))))
+
+    candidates.sort(key=lambda item: item[0])
+    seen = set()
+    ranked = []
+    for _, hex_payload in candidates:
+        if hex_payload not in seen:
+            seen.add(hex_payload)
+            ranked.append(hex_payload)
+        if len(ranked) >= max_candidates:
+            break
+    return ranked, sync_quality
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("image", help="screenshot file (PNG/JPEG)")
+    parser.add_argument("images", nargs="+", help="screenshot file(s) (PNG/JPEG); two or more enables stacking")
     parser.add_argument("--cell", type=int, default=32, help="configured cell size in CSS px (default 32)")
     parser.add_argument("--min-scale", type=float, default=0.5)
     parser.add_argument("--max-scale", type=float, default=4.0)
@@ -301,16 +486,40 @@ def main():
         default="auto",
         help="color plane to analyze (default: chroma then luma, merged)",
     )
+    parser.add_argument(
+        "--stack",
+        action="store_true",
+        help="force multi-screenshot stacking (auto-enabled for 2+ images)",
+    )
     args = parser.parse_args()
 
+    if args.stack or len(args.images) > 1:
+        ranked, sync_quality = stack_extract(
+            args.images, args.cell, args.min_scale, args.max_scale, args.bg_radius, args.erode
+        )
+        if not ranked:
+            print("No candidate payload found. Try more or larger screenshots of")
+            print("the same user, or a higher user_fingerprint_visual_opacity.")
+            sys.exit(1)
+
+        print(
+            f"Stacked {len(args.images)} screenshot(s); sync-lock quality {sync_quality:.2f} "
+            "(1.00 = perfect lock, below 0.50 likely means no recoverable watermark)."
+        )
+        print("Candidate payloads (paste the WHOLE list into the admin decoder, best first):")
+        for hex_payload in ranked[: max(args.top, 32)]:
+            print(f"  {hex_payload}")
+        return
+
     results = extract(
-        args.image, args.cell, args.min_scale, args.max_scale, args.bg_radius, args.erode, args.plane
+        args.images[0], args.cell, args.min_scale, args.max_scale, args.bg_radius, args.erode, args.plane
     )
 
     if not results:
         print("No candidate payload found. Try adjusting --cell to match the")
         print("user_fingerprint_visual_density setting, widening the scale range,")
-        print("or using a larger / less compressed screenshot region.")
+        print("or using a larger / less compressed screenshot region. For a hard")
+        print("leak, pass several same-user screenshots to enable --stack.")
         sys.exit(1)
 
     print("Candidate payloads (paste into the admin decoder, best first):")

@@ -337,6 +337,27 @@ Everything defaults to **off / most restrictive**.
    candidates, `--plane chroma|luma` to pin the analysis plane (default:
    both). Copy the whole output block. Cropping the screenshot to a
    content-light region (margins, empty columns) often sharpens the result.
+
+   **Hard leaks — short crops, a big saturated image over the content, the
+   lowest opacity — where a single screenshot will not decode:** pass two or
+   more screenshots *from the same user* to enable stacking, or `--stack` to
+   force it on one image:
+
+   ```bash
+   python3 tools/extract_watermark.py leak1.png leak2.png
+   # Stacked 2 screenshot(s); sync-lock quality 0.99 (1.00 = perfect lock...).
+   # Candidate payloads (paste the WHOLE list into the admin decoder...):
+   #   c5109c112371258d
+   #   ...
+   ```
+
+   All the user's screenshots carry the same payload, so stacking pools the
+   weak signal from each, locks every read onto the known sync byte, and
+   averages the cleanest — recovering payloads that no single frame yields.
+   The reported *sync-lock quality* is the confidence the mark was found:
+   ~1.0 is a clean lock, below ~0.5 means no recoverable watermark is
+   present. Paste the whole candidate list; the decoder's tag check plus
+   bit-correction picks the true one.
 3. **Copied text:** skip the tool — paste the text itself.
 4. Open **Admin → Plugins → Watermarking** and paste into the decoder. It
    accepts hex (14/16 chars), raw bits (56/64), text containing a zero-width
