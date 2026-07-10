@@ -7,12 +7,13 @@ tile in the screenshot is a noisy observation of the same 64-bit payload:
 folding the image at the tile period and averaging cancels the page content
 (text, images) and amplifies the watermark.
 
-Since plugin version 0.2 the overlay is pure blue, so the mark lives almost
-entirely in the blue-vs-gray chroma plane (B - (R+G)/2). Forum content is
-overwhelmingly neutral gray — text, borders, scrollbars vanish in that
-plane — which is why it is analyzed first. The luminance plane is still
-swept afterwards so screenshots made under the old gray overlay keep
-decoding.
+Since plugin version 0.2 the overlay difference-blends a dark blue, which
+subtracts a constant amount from the blue channel only, so the mark lives
+almost entirely in the blue-vs-gray chroma plane (B - (R+G)/2) with the
+same amplitude on every theme. Forum content is overwhelmingly neutral
+gray — text, borders, scrollbars vanish in that plane — which is why it is
+analyzed first. The luminance plane is still swept afterwards so
+screenshots made under the old gray overlay keep decoding.
 
 Usage:
     python3 tools/extract_watermark.py screenshot.png [--cell 32] [--min-scale 0.5] [--max-scale 4]
@@ -201,6 +202,29 @@ def analysis_planes(rgb, plane):
     return planes
 
 
+def folded_tile(img, keep, period):
+    """Fold at one period and strip the residual page background with a
+    wrap-around low-pass, keeping only cell-scale structure. Returns
+    (tile, repetitions, spread); spread measures how much periodic
+    structure survived the fold and peaks sharply at the true period."""
+    tile, repetitions = fold(img, period, keep)
+    if tile is None or repetitions < 0.9:
+        return None, 0, 0.0
+    tile = tile - box_blur(tile, max(2, period // 6), mode="wrap")
+    spread = np.percentile(tile, 95) - np.percentile(tile, 5)
+    return tile, repetitions, spread
+
+
+def decode_tile(tile, period, repetitions, found):
+    step = max(1, period // (GRID * 8))
+    for off_y, off_x in itertools.product(range(0, period // GRID, step), repeat=2):
+        means = cell_means(tile, off_y, off_x)
+        for gap, hex_payload in candidates_from_grid(means):
+            weighted = gap * np.sqrt(repetitions)
+            if hex_payload not in found or found[hex_payload] < weighted:
+                found[hex_payload] = weighted
+
+
 def extract(path, cell, min_scale, max_scale, bg_radius=None, erode_radius=None, plane="auto"):
     rgb = np.asarray(Image.open(path).convert("RGB"), dtype=np.float64)
 
@@ -217,30 +241,47 @@ def extract(path, cell, min_scale, max_scale, bg_radius=None, erode_radius=None,
     scales = np.unique(
         np.round(np.arange(min_scale, max_scale + 1e-9, 0.125) * base_period).astype(int)
     )
+    # The coarse sweep advances base_period/8 pixels at a time, but real
+    # screenshots come from fractional display scales and browser zooms
+    # (e.g. 1.09 → period 279), where folding at the nearest coarse period
+    # smears the tile into corrupt reads. After the coarse pass, fine-scan
+    # ±half a coarse step around the strongest fold responses in 1px steps
+    # and decode at the refined peak as well.
+    fine_halfwidth = max(2, base_period // 16)
 
     for img in analysis_planes(rgb, plane):
         for mask_bg_radius, mask_erode_radius in presets:
             keep = content_mask(img, mask_bg_radius, erode_radius=mask_erode_radius)
 
+            spreads = {}
             for period in scales:
                 if period < GRID * 4:
                     continue
-                tile, repetitions = fold(img, period, keep)
-                if tile is None or repetitions < 0.9:
+                tile, repetitions, spread = folded_tile(img, keep, period)
+                if tile is None:
                     continue
+                spreads[period] = spread
+                decode_tile(tile, period, repetitions, found)
 
-                # The folded tile is periodic, so remove the residual page
-                # background with a wrap-around low-pass and keep only
-                # cell-scale structure.
-                tile = tile - box_blur(tile, max(2, period // 6), mode="wrap")
-
-                step = max(1, period // (GRID * 8))
-                for off_y, off_x in itertools.product(range(0, period // GRID, step), repeat=2):
-                    means = cell_means(tile, off_y, off_x)
-                    for gap, hex_payload in candidates_from_grid(means):
-                        weighted = gap * np.sqrt(repetitions)
-                        if hex_payload not in found or found[hex_payload] < weighted:
-                            found[hex_payload] = weighted
+            for coarse_peak in sorted(spreads, key=lambda p: -spreads[p])[:2]:
+                fine = dict.fromkeys(
+                    range(
+                        max(GRID * 4, coarse_peak - fine_halfwidth),
+                        coarse_peak + fine_halfwidth + 1,
+                    )
+                )
+                for period in fine:
+                    if period in spreads:
+                        fine[period] = spreads[period]
+                        continue
+                    _, _, fine[period] = folded_tile(img, keep, period)
+                peak = max(fine, key=lambda p: fine[p] or 0.0)
+                for period in (peak - 1, peak, peak + 1):
+                    if period in spreads or period < GRID * 4:
+                        continue
+                    tile, repetitions, _ = folded_tile(img, keep, period)
+                    if tile is not None:
+                        decode_tile(tile, period, repetitions, found)
 
     return sorted(found.items(), key=lambda item: -item[1])
 

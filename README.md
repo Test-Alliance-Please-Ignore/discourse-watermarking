@@ -98,17 +98,21 @@ viewport:
   the whole viewport.
 - A `1` bit renders a rounded, slightly blurred filled square; a `0` bit
   renders nothing.
-- The pattern is applied as a CSS `mask-image` over
-  `background-color: #00f` (pure blue) at ~2% opacity
-  (`user_fingerprint_visual_opacity`, in per-mille). Blue is deliberate: the
-  signal rides the blue-yellow **chroma** axis, where human contrast
-  sensitivity is weakest — at equal amplitude a chroma shift is far less
-  perceptible than the brightness shift a gray overlay produces. It also
-  makes recovery *easier*: forum content is overwhelmingly neutral gray, so
-  in the extraction tool's chroma plane (`B − (R+G)/2`) text, borders, and
-  scrollbars cancel out while the watermark survives at full strength.
-  Works identically on light and dark palettes (both shift slightly toward
-  blue where a bit is set), with no per-theme configuration.
+- The pattern is applied as a CSS `mask-image` over a
+  `mix-blend-mode: difference` layer painted `rgb(0 0 k)`, where `k` is
+  derived from `user_fingerprint_visual_opacity` (per-mille of 255; the
+  default 20 → k≈5). Difference-blending a color that is zero in red and
+  green **subtracts exactly k from the blue channel** of whatever is
+  underneath and touches nothing else, so the mark has the same constant
+  amplitude on white, black, and every gray in between — no per-theme
+  configuration and no theme where it degrades. Blue is deliberate twice
+  over: it carries only ~11% of perceived luminance and rides the
+  blue-yellow **chroma** axis, where human contrast sensitivity is weakest,
+  so the mark is near-isoluminant and far less perceptible than a gray
+  overlay of equal amplitude. It also makes recovery *easier*: forum
+  content is overwhelmingly neutral gray, so in the extraction tool's
+  chroma plane (`B − (R+G)/2`) text, borders, and scrollbars cancel out
+  while the watermark survives at full strength.
 
 Why large soft blocks instead of fine dots or text? Because everything that
 happens to a leaked screenshot — device downscaling, messaging-app
@@ -185,11 +189,11 @@ Mobile is a first-class target, not an afterthought:
 ### Accessibility and visual impact
 
 The overlay carries `aria-hidden="true"`, no content, no pointer events, and
-~2% opacity on the blue-yellow chroma axis — a few brightness levels of blue
-shift with no meaningful luminance change, below the threshold where flat
-color patches become noticeable. It does not affect contrast ratios, does
-not repaint (static element), and does not interfere with selection,
-scrolling, or assistive technology.
+shifts only the blue channel by ~5 levels (~0.6 levels of luminance) on the
+blue-yellow chroma axis — below the threshold where flat color patches
+become noticeable, on light and dark themes alike. It does not affect
+contrast ratios, does not repaint (static element), and does not interfere
+with selection, scrolling, or assistive technology.
 
 ## Why this approach — alternatives considered
 

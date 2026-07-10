@@ -29,7 +29,11 @@ acceptance("Discourse Watermarking - visual overlay", function (needs) {
       style.maskImage.includes("data:image/svg+xml"),
       "pattern is applied as a mask"
     );
-    assert.strictEqual(style.opacity, "0.02", "opacity follows the setting");
+    assert.strictEqual(
+      style.backgroundColor,
+      "rgb(0, 0, 5)",
+      "blue-channel amplitude follows the opacity setting (20‰ of 255 ≈ 5)"
+    );
     assert.strictEqual(
       style.maskSize,
       "256px 256px",

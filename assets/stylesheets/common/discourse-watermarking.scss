@@ -3,16 +3,19 @@
 // The element carries no content and passes every pointer event through, so
 // it is inert for interaction, selection, and assistive technology.
 //
-// The pattern is applied as a mask over pure blue, not a gray: at equal
-// numeric amplitude a blue-yellow chroma shift is far less perceptible than
-// a brightness shift (human contrast sensitivity is weakest on that axis),
-// and forum content is overwhelmingly neutral gray, so the extraction
-// tool's chroma plane (B - (R+G)/2) sees the mark at full strength while
-// text, borders, and scrollbars cancel out. Works on light and dark
-// palettes alike: both shift slightly toward blue where a bit is set.
+// The pattern modulates ONLY the blue channel: `difference` blending with a
+// very dark blue rgb(0 0 k) subtracts exactly k from the blue channel of
+// whatever is underneath and leaves red/green untouched. Blue contributes
+// just ~11% of perceived luminance, so the mark is a near-isoluminant
+// blue-yellow chroma shift — the axis where human contrast sensitivity is
+// weakest — and it has the same constant amplitude on white, black, and any
+// gray page background. Forum content is overwhelmingly neutral gray, so
+// the extraction tool's chroma plane (B - (R+G)/2) sees the mark at full
+// strength while text, borders, and scrollbars cancel out.
 //
-// mask-image, mask-size, and opacity are set inline by the initializer
-// because they depend on the per-user payload and site settings.
+// mask-image, mask-size, and background-color (the amplitude) are set
+// inline by the initializer because they depend on the per-user payload and
+// site settings.
 .discourse-watermark-overlay {
   position: fixed;
   inset: 0;
@@ -23,7 +26,7 @@
   z-index: 9999;
   pointer-events: none;
   user-select: none;
-  background-color: #00f;
+  mix-blend-mode: difference;
   mask-repeat: repeat;
   mask-position: 0 0;
 }
