@@ -2,7 +2,7 @@
 
 # name: discourse-watermarking
 # about: Per-user forensic watermarking of rendered forum content to help identify the source of leaked screenshots and copied text.
-# version: 1.0.0
+# version: 1.1.0
 # authors: Discourse Watermarking Contributors
 # url: https://github.com/discourse/discourse-watermarking
 # required_version: 2.7.0
@@ -17,7 +17,7 @@ register_svg_icon "arrows-rotate"
 
 module ::DiscourseWatermarking
   PLUGIN_NAME = "discourse-watermarking"
-  VERSION = "1.0.0"
+  VERSION = "1.1.0"
 end
 
 require_relative "lib/discourse_watermarking/engine"
@@ -26,6 +26,7 @@ after_initialize do
   require_relative "lib/discourse_watermarking/secret"
   require_relative "lib/discourse_watermarking/payload"
   require_relative "lib/discourse_watermarking/zero_width"
+  require_relative "lib/discourse_watermarking/homoglyph"
   require_relative "lib/discourse_watermarking/eligibility"
   require_relative "lib/discourse_watermarking/decoder"
   require_relative "lib/discourse_watermarking/text_injector"
@@ -63,11 +64,14 @@ after_initialize do
   # (hidden-post placeholders, localization) by calling super.
   module ::DiscourseWatermarking::CookedFingerprint
     def cooked
-      DiscourseWatermarking::TextInjector.inject(
-        super,
-        scope&.user,
-        category_id: object.topic&.category_id,
-      )
+      user = scope&.user
+      category_id = object.topic&.category_id
+      # Homoglyph first (it rewrites letters via an HTML parse), then the
+      # zero-width channel (a string insertion) on the result. The two are
+      # gated independently — homoglyph by its own category list, zero-width
+      # by the strategy and enabled_categories.
+      marked = DiscourseWatermarking::TextInjector.homoglyph(super, user, category_id: category_id)
+      DiscourseWatermarking::TextInjector.inject(marked, user, category_id: category_id)
     end
   end
 

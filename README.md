@@ -301,6 +301,7 @@ plugin's page under **Admin → Plugins**):
 | `user_fingerprint_visual_opacity` | `8` | **Per-mille**, an integer, mapped to a blue-channel amplitude of `round(value/1000 × 255)` levels (8 → 2). Fractional values like `0.025` silently become zero signal — always use integers. `4` (a single blue level — the 8-bit display floor, invisible on any display) still decodes from PNG and JPEG-q70 screenshots; raise toward 40–50 only for high-risk areas where downscale+recompression robustness beats subtlety. |
 | `user_fingerprint_visual_density` | `32` | Cell size in CSS px. Bigger cells → survives harsher recompression; smaller cells → survives tighter crops. |
 | `user_fingerprint_text_enabled` | `false` | Opt-in for the zero-width copy fingerprint. Read [Text fingerprinting](#text-fingerprinting-optional) first. |
+| `user_fingerprint_homoglyph_categories` | *(empty = off)* | Categories where the homoglyph channel is applied. Independent of `strategy`; empty disables it. Read [Homoglyph fingerprinting](#homoglyph-fingerprinting-optional-per-category) first. |
 | `user_fingerprint_staff_only_decoder` | `true` | `true`: decoder is admin-only. `false`: moderators may also decode. |
 
 Everything defaults to **off / most restrictive**.
@@ -403,8 +404,49 @@ When `user_fingerprint_text_enabled` and strategy `text`/`hybrid`:
 - Sophisticated leakers strip them trivially. Treat this layer as catching
   casual copy-paste leaks only.
 
-The server-side codec (`ZeroWidth`) decodes fingerprints from pasted leak
-text in the same admin decoder.
+Since 1.0 the same zero-width fingerprint is also injected **server-side**
+into serialized `cooked` HTML and RSS feed bodies, so content pulled via API
+keys, scrapers, or feed readers (which never run the copy handler) is marked
+too. Server injection places one fingerprint inside every block element
+(paragraph, list item, heading, blockquote, table cell) so a short excerpt
+still carries a full copy, and a `before_save` hook scrubs any fingerprint a
+user pastes back into the composer so a quote never misattributes a later
+leak. The server-side codec (`ZeroWidth`) decodes fingerprints from pasted
+leak text in the same admin decoder.
+
+## Homoglyph fingerprinting (optional, per-category)
+
+A second, independent text channel added in 1.1, gated **per category** by
+`user_fingerprint_homoglyph_categories` — it is *not* tied to the
+`visual`/`text`/`hybrid` strategy, and an empty list disables it everywhere
+(opt-in). List a category and every eligible viewer's posts there are marked.
+
+- A handful of Latin letters (`a c e i j o p s x y` and some capitals) are
+  swapped for **visually identical** confusables from Cyrillic/Greek, keyed to
+  the same 56-bit payload via a repeating sync-plus-payload pattern. The text
+  looks unchanged.
+- It rides *inside real letters*, so it survives sanitizers that strip
+  zero-width characters but not confusables — a different failure mode from
+  the zero-width channel, which is the whole reason to run both.
+- Only Latin letters are ever substituted (never existing non-Latin text), and
+  substitution is applied to cooked HTML text nodes only — **links, code,
+  mentions, hashtags, and oneboxes are excluded** so nothing breaks. The
+  `before_save` scrub removes pasted homoglyph marks, but only when the text
+  contains a fingerprint that *verifies against the current secret*, so a
+  genuinely Cyrillic or Greek post is never Latinized.
+
+**Read before enabling — trade-offs specific to this channel:**
+
+- It **breaks in-page search and search indexing** for affected words (a
+  spiked "acquisition" won't match a search for "acquisition"), can confuse
+  screen readers, and is trivially detectable by a mixed-script scan (browsers
+  flag this pattern as a phishing vector).
+- It only recovers cleanly from **predominantly Latin-script** content and
+  needs a few hundred substitutable letters for a reliable read, so use it in
+  targeted, high-sensitivity, mostly-English categories — not everywhere.
+
+The `Homoglyph` codec decodes marks from pasted leak text (rendered text or
+raw HTML) in the same admin decoder.
 
 ## Privacy considerations
 

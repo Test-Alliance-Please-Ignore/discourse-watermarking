@@ -30,5 +30,15 @@ module DiscourseWatermarking
       SiteSetting.user_fingerprint_text_enabled &&
         %w[text hybrid].include?(SiteSetting.user_fingerprint_strategy)
     end
+
+    # The homoglyph channel is deliberately independent of the visual/text
+    # strategy: it is enabled purely by listing categories, and an empty list
+    # means off everywhere (opt-in, unlike enabled_categories where empty
+    # means everywhere).
+    def self.homoglyph_category?(category_id)
+      category_ids = SiteSetting.user_fingerprint_homoglyph_categories_map
+      return false if category_ids.blank?
+      category_id.present? && category_ids.include?(category_id)
+    end
   end
 end

@@ -37,6 +37,7 @@ module DiscourseWatermarking
                secret_fingerprint: Secret.fingerprint,
                enabled_group_count: SiteSetting.user_fingerprint_enabled_groups_map.size,
                enabled_category_count: SiteSetting.user_fingerprint_enabled_categories_map.size,
+               homoglyph_category_count: SiteSetting.user_fingerprint_homoglyph_categories_map.size,
                staff_only_decoder: SiteSetting.user_fingerprint_staff_only_decoder,
                recent_audits: recent_audits,
              }

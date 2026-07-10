@@ -53,6 +53,9 @@ export default class WatermarkDiagnostics extends Component {
         <dt>{{i18n "discourse_watermarking.diagnostics.category_count"}}</dt>
         <dd>{{this.categoryRestriction}}</dd>
 
+        <dt>{{i18n "discourse_watermarking.diagnostics.homoglyph_category_count"}}</dt>
+        <dd>{{@status.homoglyph_category_count}}</dd>
+
         <dt>{{i18n "discourse_watermarking.diagnostics.staff_only_decoder"}}</dt>
         <dd>{{@status.staff_only_decoder}}</dd>
       </dl>

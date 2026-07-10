@@ -94,6 +94,41 @@ RSpec.describe "Server-side text fingerprinting" do
     end
   end
 
+  describe "homoglyph channel (per-category, independent of strategy)" do
+    fab!(:marked_category, :category)
+    fab!(:marked_topic) { Fabricate(:topic, category: marked_category) }
+    fab!(:marked_post) do
+      Fabricate(
+        :post,
+        topic: marked_topic,
+        raw: ("The alliance operations team coordinates escalations across systems. " * 6),
+      )
+    end
+
+    before { SiteSetting.user_fingerprint_homoglyph_categories = marked_category.id.to_s }
+
+    it "fingerprints cooked content in a homoglyph category and resolves the user" do
+      SiteSetting.user_fingerprint_strategy = "visual" # not text/hybrid — homoglyph is independent
+      SiteSetting.user_fingerprint_text_enabled = false
+
+      sign_in(user)
+      get "/t/#{marked_topic.slug}/#{marked_topic.id}.json"
+      cooked = response.parsed_body["post_stream"]["posts"].first["cooked"]
+
+      expect(DiscourseWatermarking::Homoglyph.present?(cooked)).to eq(true)
+      result = DiscourseWatermarking::Decoder.decode(cooked)
+      expect(result[:status]).to eq(:matched)
+      expect(result[:user]).to eq(user)
+    end
+
+    it "does not fingerprint categories outside the homoglyph list" do
+      sign_in(user)
+      get "/t/#{topic.slug}/#{topic.id}.json"
+      cooked = response.parsed_body["post_stream"]["posts"].first["cooked"]
+      expect(DiscourseWatermarking::Homoglyph.present?(cooked)).to eq(false)
+    end
+  end
+
   describe "stored-content invariant" do
     it "scrubs pasted fingerprints from new posts on save" do
       foreign_fingerprint =
@@ -113,6 +148,26 @@ RSpec.describe "Server-side text fingerprinting" do
 
     it "keeps emoji ZWJ sequences intact on save" do
       raw = "family emoji \u{1F468}\u200D\u{1F469}\u200D\u{1F467} stays whole in this post"
+      saved = Fabricate(:post, topic: topic, raw: raw)
+      expect(saved.reload.raw).to eq(raw)
+    end
+
+    it "scrubs pasted homoglyph fingerprints from new posts on save" do
+      # Simulate text copied from a marked page (confusables carried in raw).
+      marked =
+        DiscourseWatermarking::Homoglyph.embed_html(
+          "<p>#{"The alliance operations team coordinates escalations. " * 6}</p>",
+          DiscourseWatermarking::Payload.payload_for(Fabricate(:user).id),
+        )
+      pasted_raw = marked.sub("<p>", "").sub("</p>", "")
+      expect(DiscourseWatermarking::Homoglyph.present?(pasted_raw)).to eq(true)
+
+      saved = Fabricate(:post, topic: topic, raw: pasted_raw)
+      expect(DiscourseWatermarking::Homoglyph.present?(saved.reload.raw)).to eq(false)
+    end
+
+    it "never Latinizes a genuinely Cyrillic post (no valid fingerprint present)" do
+      raw = "\u041F\u0440\u0438\u0432\u0435\u0442 \u043A\u043E\u043C\u0430\u043D\u0434\u0430, \u043A\u0430\u043A \u0434\u0435\u043B\u0430 \u0441\u0435\u0433\u043E\u0434\u043D\u044F \u0432 \u0441\u0438\u0441\u0442\u0435\u043C\u0435? " * 4
       saved = Fabricate(:post, topic: topic, raw: raw)
       expect(saved.reload.raw).to eq(raw)
     end

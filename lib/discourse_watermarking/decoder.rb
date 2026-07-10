@@ -125,6 +125,11 @@ module DiscourseWatermarking
       zero_width = ZeroWidth.decode(input)
       return [strip_sync(zero_width)].compact if zero_width
 
+      if Homoglyph.present?(input)
+        homoglyph = Homoglyph.decode_candidates(input)
+        return homoglyph.first(MAX_CANDIDATES) if homoglyph.any?
+      end
+
       candidates = []
       input.each_line do |line|
         chunks = [line.gsub(/[\s:,-]/, "").downcase]

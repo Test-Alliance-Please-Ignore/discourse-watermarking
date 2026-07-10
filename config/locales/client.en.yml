@@ -37,6 +37,7 @@ en:
         secret_fingerprint: "Secret fingerprint"
         group_count: "Restricted to groups"
         category_count: "Restricted to categories"
+        homoglyph_category_count: "Homoglyph categories"
         unrestricted: "no restriction"
         staff_only_decoder: "Decoder restricted to admins"
         recent_audits: "Recent decoder usage"

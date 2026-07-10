@@ -37,5 +37,9 @@ discourse_watermarking:
   user_fingerprint_text_enabled:
     default: false
     client: true
+  user_fingerprint_homoglyph_categories:
+    default: ""
+    type: category_list
+    refresh: true
   user_fingerprint_staff_only_decoder:
     default: true
