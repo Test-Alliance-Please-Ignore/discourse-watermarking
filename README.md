@@ -108,11 +108,13 @@ viewport:
   plane (`B − (R+G)/2`) cancels neutral gray content while retaining the
   blue signal. Visibility and recovery depend on the page, display, and
   screenshot processing; a small signal is not guaranteed to be invisible.
-- The paint colour is protected with an inline `!important` declaration.
-  Dark Reader's Dynamic engine otherwise treats the masked paint as foreground
-  artwork and brightens it into an obvious pattern. The layer has no ID and
-  uses a neutral styling class; its presence and client-side payload remain
-  discoverable through browser inspection.
+- The paint colour and `filter: none` are protected with inline `!important`
+  declarations. Dark Reader can brighten the masked paint or apply an inversion
+  filter that makes the pattern obvious even when its computed background
+  colour is correct. The filter protection applies only to this layer, on
+  screen and in print. The layer has no ID and uses a neutral styling class;
+  its presence and client-side payload remain discoverable through browser
+  inspection.
 - Printing uses normal blending with pure blue paint at opacity `0.012`.
   Print events and media changes switch the protected inline colour and
   restore the configured screen amplitude afterward, including after cancel.
@@ -556,7 +558,7 @@ LOAD_PLUGINS=1 bin/rspec plugins/discourse-watermarking/spec/system
 Frontend (unit: bit codec, SVG builder, zero-width vector shared with the
 Ruby spec, route exclusion; acceptance: overlay rendering across desktop,
 mobile, scoped, text-only, disabled, and anonymous configurations, generated
-colour overrides, and print colour restoration):
+colour/filter overrides, and print colour restoration):
 
 ```bash
 LOAD_PLUGINS=1 bin/qunit plugins/discourse-watermarking/test/javascripts
@@ -566,8 +568,12 @@ The standalone browser regression exercises the actual initializer, SVG
 helpers, and overlay CSS with Dark Reader's pinned **4.9.131 Dynamic API
 engine**. It stubs Discourse service lookup and page changes, checks rendered
 pixels, print media/events, initialization during print, cleanup, and scope
-exclusions, and can verify payload recovery. It does not replace testing the
-installed extension on a live forum or testing its other theme modes.
+exclusions, and can verify payload recovery. It also injects the reported
+`invert(1) hue-rotate(180deg) brightness(0.75) contrast(0.9)` filter as an
+important stylesheet rule, retaining it through navigation, remounting, and
+printing. Pixel checks cover settings 4, 8, and 20 on controlled backgrounds.
+It does not replace testing the installed extension on a live forum or testing
+its other theme modes.
 
 From this plugin directory, in a Python environment with `playwright`,
 `numpy`, and `Pillow` installed:
@@ -586,9 +592,10 @@ python3 test/browser/watermark_rendering.py --engine firefox \
 ```
 
 The runner verifies the downloaded library's SHA-256 before executing it.
-`--extract` checks PNG, JPEG quality 70, and print captures at the known fixture
-scale. `--pdf` also captures a Chromium PDF and requires `pdftoppm` from Poppler
-to check the rasterized output. Omit those flags for the faster rendering checks.
+`--extract` checks PNG and JPEG quality-70 captures under the inversion rule at
+settings 4 and 8, plus print captures at the known fixture scale. `--pdf` also
+captures a Chromium PDF and requires `pdftoppm` from Poppler to check the
+rasterized output. Omit those flags for the faster rendering checks.
 
 Extraction tool: `tools/extract_watermark.py` was validated against
 synthetic screenshots (light theme, dark theme, 50% downscale + JPEG q70,
@@ -621,6 +628,8 @@ see what you are checking:
 9. **Dark Reader:** enable it before loading and after loading a topic, toggle
    it, and change its brightness/contrast. Verify subtlety and recovery in
    Dynamic mode; separately check Static, Filter, and Filter+ where supported.
+   Check the overlay's computed `filter` is `none` as well as its background
+   colour: an element filter can amplify the signal without changing that colour.
 10. **Print:** open preview, cancel, then print again. Verify the blue print
     treatment, extract from the saved PDF, and confirm the screen paint is
     restored afterward. Repeat with Dark Reader enabled.

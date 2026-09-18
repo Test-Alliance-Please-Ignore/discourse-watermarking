@@ -1,21 +1,61 @@
 **Dark Reader compatibility and overlay discoverability audit — 18 September 2026**
 
 Audited revision: `9614803771b2a290529c144b48989bf125028273`.
-This report records the findings before implementation. The subsequent fix
-protects screen/print paint, removes the descriptive overlay ID/class, and adds
+This report records the original findings and the follow-up diagnosis below.
+The first fix protects screen/print paint, removes the descriptive overlay
+ID/class, and adds
 [browser regression coverage](../../test/browser/watermark_rendering.py).
 The historical reproduction below reads the audited Git revision so its
 measurements remain reproducible after those fixes.
 
-Implementation verification passed with the pinned Dynamic API engine in both
+Verification of the first fix passed with the pinned Dynamic API engine in both
 Firefox 153.0 and Chromium 151.0.7922.34: native and themed screenshots retained
 the `[0, 0, 2]` signal, print retained its blue chroma signal, and navigation,
 print restoration, teardown/reinitialization, and exclusions passed. The test
 payload was recovered from PNG, JPEG quality 70, and print captures in both
 browsers, plus a rasterized Chromium PDF. JavaScript, stylesheet, and Ruby lint
 checks passed. The Discourse QUnit runner could not boot its local Rails server
-because Redis was unavailable; installed-extension integration remains untested.
+because Redis was unavailable. That verification did not include a matching
+element inversion rule and therefore missed the remaining reported failure.
 See the [README](../../README.md#testing) for the current regression commands.
+
+**Follow-up: an element filter bypassed the colour-only protection.** The
+reported computed styles show `background-color: rgb(0, 0, 1)`, inline
+important priority, difference blending, and opacity 1. The document and body
+filters are `none`, but the overlay itself has
+`filter: invert(1) hue-rotate(180deg) brightness(0.75) contrast(0.9)`.
+This transforms its painted pixels after background-colour computation, so
+checking or protecting that colour alone cannot fix this case.
+
+Injecting that exact filter as an important stylesheet rule into the browser
+regression reproduced the failure before the follow-up fix: the maximum
+red/green/blue screenshot difference reached `137 / 133 / 131` instead of
+being bounded by the configured two blue levels. The follow-up sets
+`filter: none !important` inline when creating the overlay, before attaching
+it. It applies to the overlay during both screen and print rendering; Dark
+Reader continues theming the rest of the page.
+
+With that protection, Firefox 153.0 and Chromium 151.0.7922.34 pass pixel,
+computed-filter, navigation, remounting, print, and exclusion checks while the
+inversion rule remains active. The synthetic payload is recovered from PNG
+and JPEG quality-70 captures at settings 4 and 8 (one and two blue levels),
+print captures in both browsers, and a rasterized Chromium PDF. The acceptance
+test now includes the reported filter as well as the background-colour
+override. Full Discourse QUnit execution remains limited by the unavailable
+local Redis service.
+
+An additional check installed the signed Mozilla Dark Reader 4.9.131 add-on in
+Firefox 155.0.1 against the local synthetic renderer fixture. A developer
+`INVERT` rule targeting `.d-view-layer`, Dynamic mode, brightness 75, and
+contrast 100 produced the exact reported computed filter (the extension's
+inversion rule reduces contrast to 90%). Temporarily removing only the inline
+filter protection reproduced maximum pixel differences of `148 / 144 / 145`;
+restoring it returned them to `0 / 0 / 2`, with Dynamic mode still active.
+This verifies the installed extension's inversion path under a controlled
+matching rule. It does not establish which selector on the reported forum
+triggered that rule, nor replace verification on that live forum.
+
+The remainder of this report preserves the original audit and its evidence.
 
 **The reported visual problem is reproducible.** Dark Reader brightens the
 overlay's near-black blue paint because it interprets a CSS-masked background

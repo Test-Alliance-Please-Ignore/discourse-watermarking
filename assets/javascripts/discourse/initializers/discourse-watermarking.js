@@ -129,6 +129,11 @@ export default {
         overlay.className = "d-view-layer";
         overlay.setAttribute("aria-hidden", "true");
 
+        // Extension inversion rules filter the painted layer without changing
+        // its computed background colour. Keep this numeric signal unfiltered
+        // on screen and in print, even against important stylesheet rules.
+        overlay.style.setProperty("filter", "none", "important");
+
         const density = siteSettings.user_fingerprint_visual_density;
         const tileSize = `${density * 8}px ${density * 8}px`;
         updatePaint();

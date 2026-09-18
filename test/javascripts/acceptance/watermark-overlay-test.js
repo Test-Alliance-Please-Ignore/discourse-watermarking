@@ -42,13 +42,14 @@ acceptance("Discourse Watermarking - visual overlay", function (needs) {
     );
   });
 
-  test("preserves the signal against a Dark Reader inline override", async function (assert) {
+  test("preserves the signal against Dark Reader colour and filter overrides", async function (assert) {
     await visit("/t/internationalization-localization/280");
 
     const element = overlay();
     const override = document.createElement("style");
     override.textContent = `[data-darkreader-inline-bgcolor] {
       background-color: var(--darkreader-inline-bgcolor) !important;
+      filter: invert(1) hue-rotate(180deg) brightness(0.75) contrast(0.9) !important;
     }`;
     document.head.appendChild(override);
     element.setAttribute("data-darkreader-inline-bgcolor", "");
@@ -64,6 +65,11 @@ acceptance("Discourse Watermarking - visual overlay", function (needs) {
         "the rendered colour retains the configured blue amplitude"
       );
       assert.strictEqual(getComputedStyle(element).mixBlendMode, "difference");
+      assert.strictEqual(
+        getComputedStyle(element).filter,
+        "none",
+        "the paint cannot be inverted after its colour is computed"
+      );
     } finally {
       override.remove();
       element.removeAttribute("data-darkreader-inline-bgcolor");

@@ -21,6 +21,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[2]
 PAYLOAD = "c5109c112371258d"
 DARKREADER_SHA256 = "67dffb98fd5be7815de32578d2c3d3af60e30cc94bb94f325e59aaf6294ee7fd"
+REPORTED_FILTER = "invert(1) hue-rotate(180deg) brightness(0.75) contrast(0.9)"
 # The fixture has no other aria-hidden divs. Avoid coupling the pixel test to
 # the renderer's class name, so it can reproduce the original bug as well.
 OVERLAY = "body > div[aria-hidden=true]"
@@ -82,7 +83,7 @@ def paint(page):
     return page.locator(OVERLAY).evaluate("""el => {
       const s = getComputedStyle(el);
       return {background: s.backgroundColor, blend: s.mixBlendMode,
-        opacity: s.opacity, mask: s.maskImage, pointerEvents: s.pointerEvents};
+        opacity: s.opacity, filter: s.filter, mask: s.maskImage, pointerEvents: s.pointerEvents};
     }""")
 
 
@@ -107,6 +108,7 @@ def screen_check(page, output, amplitude=2):
     style = paint(page)
     assert style["background"] == f"rgb(0, 0, {amplitude})", style
     assert style["blend"] == "difference" and style["opacity"] == "1", style
+    assert style["filter"] == "none", style
     assert "data:image/svg+xml" in style["mask"] and style["pointerEvents"] == "none", style
     return delta
 
@@ -135,11 +137,19 @@ def run(args):
         # First assertion reproduces the actual visual bug before the fix.
         png = args.output / "dynamic.png"
         measurements["dynamic"] = screen_check(page, png)
+        assert page.locator(OVERLAY).get_attribute("id") is None
+        assert page.locator(OVERLAY).get_attribute("class") == "d-view-layer"
+
+        # A site-specific inversion rule filters the painted element without
+        # changing its computed background colour. This escaped the API-only
+        # test and was reported with a one-level blue signal in production.
+        # Keep the rule active through navigation, remounting, and printing.
+        page.add_style_tag(content=f"html body > .d-view-layer {{filter: {REPORTED_FILTER} !important;}}")
+        png = args.output / "element-filter.png"
+        measurements["element_filter"] = screen_check(page, png)
         screenshots.append(png)
         Image.open(png).convert("RGB").save(png.with_suffix(".jpg"), quality=70)
         screenshots.append(png.with_suffix(".jpg"))
-        assert page.locator(OVERLAY).get_attribute("id") is None
-        assert page.locator(OVERLAY).get_attribute("class") == "d-view-layer"
 
         page.evaluate("navigate('topic.show', '/t/example/2')")
         assert page.locator(OVERLAY).count() == 1
@@ -196,10 +206,19 @@ def run(args):
             screen_check(page, args.output / f"native-{background.lstrip('#')}-{setting}.png", amplitude)
             enable(page)
             screen_check(page, args.output / f"dynamic-{background.lstrip('#')}-{setting}.png", amplitude)
+            page.add_style_tag(content=f"html body > .d-view-layer {{filter: {REPORTED_FILTER} !important;}}")
+            png = args.output / f"element-filter-{background.lstrip('#')}-{setting}.png"
+            screen_check(page, png, amplitude)
+            if setting == 4:
+                screenshots.append(png)
+                Image.open(png).convert("RGB").save(png.with_suffix(".jpg"), quality=70)
+                screenshots.append(png.with_suffix(".jpg"))
             page.close()
 
         page = new_page(browser, args.darkreader, enabled_first=True, media="print")
+        page.add_style_tag(content=f"html body > .d-view-layer {{filter: {REPORTED_FILTER} !important;}}")
         wait_paint(page, "rgb(0, 0, 255)")
+        assert paint(page)["filter"] == "none", paint(page)
         page.evaluate("DarkReader.disable()")
         print_png = args.output / "print.png"
         delta = pixels(page, print_png)
