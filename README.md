@@ -101,27 +101,32 @@ viewport:
 - The pattern is applied as a CSS `mask-image` over a
   `mix-blend-mode: difference` layer painted `rgb(0 0 k)`, where `k` is
   derived from `user_fingerprint_visual_opacity` (per-mille of 255; the
-  default 8 → k=2). Difference-blending a color that is zero in red and
-  green **subtracts exactly k from the blue channel** of whatever is
-  underneath and touches nothing else, so the mark has the same constant
-  amplitude on white, black, and every gray in between — no per-theme
-  configuration and no theme where it degrades. Blue is deliberate twice
-  over: it carries only ~11% of perceived luminance and rides the
-  blue-yellow **chroma** axis, where human contrast sensitivity is weakest,
-  so the mark is near-isoluminant and far less perceptible than a gray
-  overlay of equal amplitude. It also makes recovery *easier*: forum
-  content is overwhelmingly neutral gray, so in the extraction tool's
-  chroma plane (`B − (R+G)/2`) text, borders, and scrollbars cancel out
-  while the watermark survives at full strength.
+  default 8 → k=2). At fully covered pixels, the blue output is
+  `abs(backgroundBlue - k)`, while red and green are unchanged. The change
+  is bounded by `k`; its sign and magnitude depend on the background and
+  can vanish when `backgroundBlue = k/2`. The extraction tool's chroma
+  plane (`B − (R+G)/2`) cancels neutral gray content while retaining the
+  blue signal. Visibility and recovery depend on the page, display, and
+  screenshot processing; a small signal is not guaranteed to be invisible.
+- The paint colour is protected with an inline `!important` declaration.
+  Dark Reader's Dynamic engine otherwise treats the masked paint as foreground
+  artwork and brightens it into an obvious pattern. The layer has no ID and
+  uses a neutral styling class; its presence and client-side payload remain
+  discoverable through browser inspection.
+- Printing uses normal blending with pure blue paint at opacity `0.012`.
+  Print events and media changes switch the protected inline colour and
+  restore the configured screen amplitude afterward, including after cancel.
+  Coverage remains dependent on the browser printing backgrounds.
 
 Why large soft blocks instead of fine dots or text? Because everything that
 happens to a leaked screenshot — device downscaling, messaging-app
 recompression, JPEG quantization, screen-to-camera capture — is a **low-pass
 process**: it destroys fine detail and preserves coarse, low-spatial-frequency
-structure. Large blocks *are* low-frequency structure. In verification runs
-against real dark-theme forum screenshots, the extraction tool places the
-exact payload at rank 1 from lossless captures and from JPEG quality-70
-recompression at the default 2% opacity. One honest limit: heavy *combined*
+structure. Large blocks *are* low-frequency structure. Browser regression
+fixtures recover the expected payload among the top 12 candidates from PNG
+and JPEG quality-70 screenshots at the default setting of 8 (two blue levels).
+This fixture result does not guarantee recovery from every forum screenshot.
+One limit: heavy *combined*
 degradation (50% downscale **plus** JPEG q70) deterministically rounds a
 ~2-level chroma signal away on flat regions — surviving that needs opacity
 around 4–5%, which trades away invisibility. Raise
@@ -298,7 +303,7 @@ plugin's page under **Admin → Plugins**):
 | `user_fingerprint_enabled_groups` | *(empty = everyone logged in)* | Watermark only members of these groups. |
 | `user_fingerprint_enabled_categories` | *(empty = everywhere)* | Watermark only topics in these categories. |
 | `user_fingerprint_strategy` | `visual` | `visual`, `text`, or `hybrid`. |
-| `user_fingerprint_visual_opacity` | `8` | **Per-mille**, an integer, mapped to a blue-channel amplitude of `round(value/1000 × 255)` levels (8 → 2). Fractional values like `0.025` silently become zero signal — always use integers. `4` (a single blue level — the 8-bit display floor, invisible on any display) still decodes from PNG and JPEG-q70 screenshots; raise toward 40–50 only for high-risk areas where downscale+recompression robustness beats subtlety. |
+| `user_fingerprint_visual_opacity` | `8` | **Per-mille**, an integer, mapped to a blue-channel amplitude of `max(1, round(value/1000 × 255))` levels (8 → 2). Use integers; `4` gives one blue level. Visibility and recovery depend on content, display, and processing. Raise toward 40–50 only where recompression robustness matters more than subtlety. |
 | `user_fingerprint_visual_density` | `32` | Cell size in CSS px. Bigger cells → survives harsher recompression; smaller cells → survives tighter crops. |
 | `user_fingerprint_text_enabled` | `false` | Opt-in for the zero-width copy fingerprint. Read [Text fingerprinting](#text-fingerprinting-optional) first. |
 | `user_fingerprint_homoglyph_categories` | *(empty = off)* | Categories where the homoglyph channel is applied. Independent of `strategy`; empty disables it. Read [Homoglyph fingerprinting](#homoglyph-fingerprinting-optional-per-category) first. |
@@ -550,11 +555,40 @@ LOAD_PLUGINS=1 bin/rspec plugins/discourse-watermarking/spec/system
 
 Frontend (unit: bit codec, SVG builder, zero-width vector shared with the
 Ruby spec, route exclusion; acceptance: overlay rendering across desktop,
-mobile, scoped, text-only, disabled, and anonymous configurations):
+mobile, scoped, text-only, disabled, and anonymous configurations, generated
+colour overrides, and print colour restoration):
 
 ```bash
 LOAD_PLUGINS=1 bin/qunit plugins/discourse-watermarking/test/javascripts
 ```
+
+The standalone browser regression exercises the actual initializer, SVG
+helpers, and overlay CSS with Dark Reader's pinned **4.9.131 Dynamic API
+engine**. It stubs Discourse service lookup and page changes, checks rendered
+pixels, print media/events, initialization during print, cleanup, and scope
+exclusions, and can verify payload recovery. It does not replace testing the
+installed extension on a live forum or testing its other theme modes.
+
+From this plugin directory, in a Python environment with `playwright`,
+`numpy`, and `Pillow` installed:
+
+```bash
+python3 -m playwright install chromium firefox
+mkdir -p /tmp/darkreader-regression
+curl -fL https://unpkg.com/darkreader@4.9.131/darkreader.js \
+  -o /tmp/darkreader-regression/darkreader.js
+python3 test/browser/watermark_rendering.py \
+  --darkreader /tmp/darkreader-regression/darkreader.js \
+  --output /tmp/darkreader-regression/chromium --extract --pdf
+python3 test/browser/watermark_rendering.py --engine firefox \
+  --darkreader /tmp/darkreader-regression/darkreader.js \
+  --output /tmp/darkreader-regression/firefox --extract
+```
+
+The runner verifies the downloaded library's SHA-256 before executing it.
+`--extract` checks PNG, JPEG quality 70, and print captures at the known fixture
+scale. `--pdf` also captures a Chromium PDF and requires `pdftoppm` from Poppler
+to check the rasterized output. Omit those flags for the faster rendering checks.
 
 Extraction tool: `tools/extract_watermark.py` was validated against
 synthetic screenshots (light theme, dark theme, 50% downscale + JPEG q70,
@@ -567,10 +601,11 @@ With the plugin enabled, a test user logged in, and
 `user_fingerprint_visual_opacity` temporarily raised to ~80 (8%) so you can
 see what you are checking:
 
-1. **Foundation theme + Marigold palette (light):** open a topic — faint
-   dark blocks tile the page; verify they follow the palette's text color.
-2. **Dark palette:** switch palettes — blocks become *lighter* than the
-   background, same layout.
+1. **Foundation theme + Marigold palette (light):** open a topic — the pattern
+   changes the blue channel. Verify the computed overlay paint is `rgb(0, 0, 20)`
+   at setting 80, with `mix-blend-mode: difference`.
+2. **Dark palette:** switch palettes — verify the same paint and layout.
+   Pattern contrast and polarity depend on the underlying colours.
 3. **Desktop screenshot:** screenshot a topic, run the extraction tool,
    decode in the admin UI, confirm it resolves to the test user.
 4. **Android screenshot:** repeat on Android Chrome (2–3× DPR); the tool's
@@ -583,8 +618,14 @@ see what you are checking:
 8. **Interaction checks:** text selection, link clicks, scrolling, composer,
    and modals must be unaffected; the overlay must be absent on `/admin`,
    `/login`, `/signup`, and for anonymous visitors.
-9. Restore the opacity to ~20 (2%) and verify the overlay is not noticeable
-   in either theme.
+9. **Dark Reader:** enable it before loading and after loading a topic, toggle
+   it, and change its brightness/contrast. Verify subtlety and recovery in
+   Dynamic mode; separately check Static, Filter, and Filter+ where supported.
+10. **Print:** open preview, cancel, then print again. Verify the blue print
+    treatment, extract from the saved PDF, and confirm the screen paint is
+    restored afterward. Repeat with Dark Reader enabled.
+11. Restore the configured setting (default `8`) and check visibility and
+    payload recovery in both native themes and with the extension enabled.
 
 ---
 

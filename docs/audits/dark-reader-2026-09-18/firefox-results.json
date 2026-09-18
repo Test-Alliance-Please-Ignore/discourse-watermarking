@@ -1,0 +1,285 @@
+{
+  "browser": "153.0",
+  "darkreader": {
+    "version": "4.9.131",
+    "source": "https://unpkg.com/darkreader@4.9.131/darkreader.js",
+    "sha256": "67dffb98fd5be7815de32578d2c3d3af60e30cc94bb94f325e59aaf6294ee7fd"
+  },
+  "variants": {
+    "current": {
+      "before": {
+        "background": "rgb(0, 0, 2)",
+        "opacity": "1",
+        "blend": "difference",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [],
+        "max_channel_delta": [
+          0,
+          0,
+          2
+        ],
+        "changed_pixel_fraction": 0.470672607421875
+      },
+      "after": {
+        "background": "rgb(231, 229, 226)",
+        "opacity": "1",
+        "blend": "difference",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [
+          "data-darkreader-inline-bgcolor"
+        ],
+        "max_channel_delta": [
+          183,
+          177,
+          172
+        ],
+        "changed_pixel_fraction": 0.46380615234375
+      },
+      "print_without_darkreader": {
+        "background": "rgb(0, 0, 255)",
+        "opacity": "0.012",
+        "blend": "normal",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [
+          "data-darkreader-inline-bgcolor"
+        ],
+        "max_channel_delta": [
+          4,
+          4,
+          0
+        ],
+        "changed_pixel_fraction": 0.35443115234375
+      }
+    },
+    "inline-important": {
+      "before": {
+        "background": "rgb(0, 0, 2)",
+        "opacity": "1",
+        "blend": "difference",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [],
+        "max_channel_delta": [
+          0,
+          0,
+          2
+        ],
+        "changed_pixel_fraction": 0.470672607421875
+      },
+      "after": {
+        "background": "rgb(0, 0, 2)",
+        "opacity": "1",
+        "blend": "difference",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [
+          "data-darkreader-inline-bgcolor"
+        ],
+        "max_channel_delta": [
+          0,
+          0,
+          2
+        ],
+        "changed_pixel_fraction": 0.470672607421875
+      },
+      "print_without_darkreader": {
+        "background": "rgb(0, 0, 2)",
+        "opacity": "0.012",
+        "blend": "normal",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [
+          "data-darkreader-inline-bgcolor"
+        ],
+        "max_channel_delta": [
+          4,
+          4,
+          4
+        ],
+        "changed_pixel_fraction": 0.35443115234375
+      },
+      "lifecycle": [
+        {
+          "background": "rgb(0, 0, 2)",
+          "opacity": "1",
+          "blend": "difference",
+          "mask": true,
+          "inline": "rgb(0, 0, 2)",
+          "darkreaderAttributes": [
+            "data-darkreader-inline-bgcolor"
+          ],
+          "max_channel_delta": [
+            0,
+            0,
+            2
+          ],
+          "changed_pixel_fraction": 0.470672607421875
+        },
+        {
+          "background": "rgb(0, 0, 2)",
+          "opacity": "1",
+          "blend": "difference",
+          "mask": true,
+          "inline": "rgb(0, 0, 2)",
+          "darkreaderAttributes": [
+            "data-darkreader-inline-bgcolor"
+          ],
+          "max_channel_delta": [
+            0,
+            0,
+            2
+          ],
+          "changed_pixel_fraction": 0.470672607421875
+        },
+        {
+          "background": "rgb(0, 0, 2)",
+          "opacity": "1",
+          "blend": "difference",
+          "mask": true,
+          "inline": "rgb(0, 0, 2)",
+          "darkreaderAttributes": [
+            "data-darkreader-inline-bgcolor"
+          ],
+          "max_channel_delta": [
+            0,
+            0,
+            2
+          ],
+          "changed_pixel_fraction": 0.470672607421875
+        }
+      ]
+    },
+    "ignore-attribute": {
+      "before": {
+        "background": "rgb(0, 0, 2)",
+        "opacity": "1",
+        "blend": "difference",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [
+          "data-darkreader-ignore"
+        ],
+        "max_channel_delta": [
+          0,
+          0,
+          2
+        ],
+        "changed_pixel_fraction": 0.470672607421875
+      },
+      "after": {
+        "background": "rgb(231, 229, 226)",
+        "opacity": "1",
+        "blend": "difference",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [
+          "data-darkreader-ignore",
+          "data-darkreader-inline-bgcolor"
+        ],
+        "max_channel_delta": [
+          183,
+          177,
+          172
+        ],
+        "changed_pixel_fraction": 0.46380615234375
+      }
+    },
+    "ignore-inline-fix": {
+      "before": {
+        "background": "rgb(0, 0, 2)",
+        "opacity": "1",
+        "blend": "difference",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [],
+        "max_channel_delta": [
+          0,
+          0,
+          2
+        ],
+        "changed_pixel_fraction": 0.470672607421875
+      },
+      "after": {
+        "background": "rgb(0, 0, 2)",
+        "opacity": "1",
+        "blend": "difference",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [],
+        "max_channel_delta": [
+          0,
+          0,
+          2
+        ],
+        "changed_pixel_fraction": 0.470672607421875
+      }
+    },
+    "without-mask": {
+      "before": {
+        "background": "rgb(0, 0, 2)",
+        "opacity": "1",
+        "blend": "difference",
+        "mask": false,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [],
+        "max_channel_delta": [
+          0,
+          0,
+          2
+        ],
+        "changed_pixel_fraction": 1.0
+      },
+      "after": {
+        "background": "rgb(0, 0, 2)",
+        "opacity": "1",
+        "blend": "difference",
+        "mask": false,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [
+          "data-darkreader-inline-bgcolor"
+        ],
+        "max_channel_delta": [
+          0,
+          0,
+          2
+        ],
+        "changed_pixel_fraction": 1.0
+      }
+    },
+    "element-opacity-cap": {
+      "before": {
+        "background": "rgb(0, 0, 2)",
+        "opacity": "0.00784314",
+        "blend": "difference",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [],
+        "max_channel_delta": [
+          0,
+          0,
+          0
+        ],
+        "changed_pixel_fraction": 0.0
+      },
+      "after": {
+        "background": "rgb(231, 229, 226)",
+        "opacity": "0.00784314",
+        "blend": "difference",
+        "mask": true,
+        "inline": "rgb(0, 0, 2)",
+        "darkreaderAttributes": [
+          "data-darkreader-inline-bgcolor"
+        ],
+        "max_channel_delta": [
+          1,
+          1,
+          1
+        ],
+        "changed_pixel_fraction": 0.088470458984375
+      }
+    }
+  }
+}

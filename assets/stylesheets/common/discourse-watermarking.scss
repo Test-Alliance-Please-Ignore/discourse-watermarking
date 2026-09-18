@@ -4,25 +4,20 @@
 // it is inert for interaction, selection, and assistive technology.
 //
 // The pattern modulates ONLY the blue channel: `difference` blending with a
-// very dark blue rgb(0 0 k) subtracts exactly k from the blue channel of
-// whatever is underneath and leaves red/green untouched. Blue contributes
-// just ~11% of perceived luminance, so the mark is a near-isoluminant
-// blue-yellow chroma shift — the axis where human contrast sensitivity is
-// weakest — and it has the same constant amplitude on white, black, and any
-// gray page background. Forum content is overwhelmingly neutral gray, so
-// the extraction tool's chroma plane (B - (R+G)/2) sees the mark at full
-// strength while text, borders, and scrollbars cancel out.
+// very dark blue rgb(0 0 k) produces abs(backgroundBlue - k) and leaves
+// red/green untouched. The blue-channel change is bounded by k; its sign and
+// magnitude depend on the background. The extraction tool's chroma plane
+// (B - (R+G)/2) cancels neutral gray content while retaining this signal.
 //
 // mask-image, mask-size, and background-color (the amplitude) are set
 // inline by the initializer because they depend on the per-user payload and
 // site settings.
-.discourse-watermark-overlay {
+.d-view-layer {
   position: fixed;
   inset: 0;
 
   // Above modals, menus, and the composer so screenshots of any restricted
-  // content carry the mark. Invisible and pointer-transparent, so a high
-  // value has no interaction or readability cost.
+  // content carry the mark. Pointer events pass through to the content.
   z-index: 9999;
   pointer-events: none;
   user-select: none;
@@ -36,13 +31,12 @@
 // reliably honor difference blending — if it were dropped, the near-black
 // rgb(0 0 k) paint would appear as plainly visible dark blobs — so printing
 // falls back to a faint normal-blend blue veil over the (white) page.
-// !important is required to beat the inline background-color set by the
-// initializer. Best-effort: browsers only print backgrounds when the user
-// enables them, and print-color-adjust asks for them to be kept as-is.
+// The initializer switches the protected inline paint to pure blue for print
+// and restores the screen amplitude afterward. Browsers only print backgrounds
+// when the user enables them; print-color-adjust asks to keep their colours.
 @media print {
-  .discourse-watermark-overlay {
+  .d-view-layer {
     mix-blend-mode: normal;
-    background-color: #00f !important;
     opacity: 0.012;
     print-color-adjust: exact;
   }

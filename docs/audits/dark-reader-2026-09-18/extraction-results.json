@@ -1,0 +1,70 @@
+{
+  "chromium-inline-important-after.png": {
+    "expected_payload_in_top_12": true,
+    "candidates": [
+      "c510f98521702e84",
+      "c5109c112371258d",
+      "c515f99d25717eae",
+      "c5109d112371258d",
+      "c510fd8521702e84",
+      "c510f98521722e84",
+      "c514f99d25717eae",
+      "c5109c112371250d",
+      "c510f90521702e84",
+      "c5109c992371358d",
+      "c510f98d21706e8c",
+      "c5109d3363712d8d"
+    ]
+  },
+  "chromium-inline-important-after.jpg": {
+    "expected_payload_in_top_12": true,
+    "candidates": [
+      "c5109c112371258d",
+      "c510f98521702e84",
+      "c518fd8721702e84",
+      "c510dc112371258d",
+      "c510f98525702e84",
+      "c510fd8521702e84",
+      "c5109d112371258d",
+      "c5109c992371358d",
+      "c510f98d21706e8c",
+      "c5189c113371258d",
+      "c510f98521703e86",
+      "c5109c112371250d"
+    ]
+  },
+  "firefox-inline-important-after.png": {
+    "expected_payload_in_top_12": true,
+    "candidates": [
+      "c5109c112371258d",
+      "c510f98521702e84",
+      "c514f98525712e84",
+      "c510dc112371258d",
+      "c510f98525702e84",
+      "c510f98d21707e8c",
+      "c5109c993371358d",
+      "c5109c132371258d",
+      "c518f98521702e84",
+      "c510f98521703e86",
+      "c5189c113371258d",
+      "c514f98525713e86"
+    ]
+  },
+  "firefox-inline-important-after.jpg": {
+    "expected_payload_in_top_12": true,
+    "candidates": [
+      "c5109c112371258d",
+      "c510f98521702e84",
+      "c5109c113371258d",
+      "c510f98521703e84",
+      "c518f98521702e84",
+      "c5109c132371258d",
+      "c510f98521707e8c",
+      "c5109c193371358d",
+      "c5109c112373258d",
+      "c5189c113371258d",
+      "c510f98521703e86",
+      "c5109c1333712d8d"
+    ]
+  }
+}

@@ -6,13 +6,15 @@ import {
   selectionAllowsFingerprint,
 } from "discourse/plugins/discourse-watermarking/discourse/lib/watermark";
 
-const OVERLAY_ID = "discourse-watermark-overlay";
 const MIN_COPY_LENGTH = 24;
 
 export default {
   name: "discourse-watermarking",
 
   initialize(owner) {
+    this._cleanup?.();
+    this._cleanup = null;
+
     const siteSettings = owner.lookup("service:site-settings");
     const currentUser = owner.lookup("service:current-user");
 
@@ -42,6 +44,51 @@ export default {
     // Whether watermarking applies to the page currently being displayed.
     // Shared by the overlay and the copy handler.
     let activeHere = false;
+    let destroyed = false;
+    let overlay = null;
+
+    const printMedia = visualEnabled ? window.matchMedia("print") : null;
+    let printing = printMedia?.matches ?? false;
+
+    const updatePaint = () => {
+      if (!overlay) {
+        return;
+      }
+
+      // Difference blending yields abs(backgroundBlue - amplitude), leaving
+      // red and green unchanged. The default 8 per-mille gives two blue levels.
+      const amplitude = printing
+        ? 255
+        : Math.max(
+            1,
+            Math.round(
+              (siteSettings.user_fingerprint_visual_opacity / 1000) * 255
+            )
+          );
+
+      // Dark Reader treats masked backgrounds as foreground artwork and
+      // brightens this near-black paint. Protect the signal from its generated
+      // stylesheet. Print colour must be assigned here too: a print stylesheet
+      // cannot override an inline important declaration.
+      overlay.style.setProperty(
+        "background-color",
+        `rgb(0 0 ${amplitude})`,
+        "important"
+      );
+    };
+
+    const beforePrint = () => {
+      printing = true;
+      updatePaint();
+    };
+    const afterPrint = () => {
+      printing = false;
+      updatePaint();
+    };
+    const printMediaChanged = (event) => {
+      printing = event.matches;
+      updatePaint();
+    };
 
     const routerService = owner.lookup("service:router");
 
@@ -68,7 +115,8 @@ export default {
     };
 
     const removeOverlay = () => {
-      document.getElementById(OVERLAY_ID)?.remove();
+      overlay?.remove();
+      overlay = null;
     };
 
     const renderOverlay = () => {
@@ -76,29 +124,14 @@ export default {
         return;
       }
 
-      let overlay = document.getElementById(OVERLAY_ID);
-      if (!overlay) {
+      if (!overlay?.isConnected) {
         overlay = document.createElement("div");
-        overlay.id = OVERLAY_ID;
-        overlay.className = "discourse-watermark-overlay";
+        overlay.className = "d-view-layer";
         overlay.setAttribute("aria-hidden", "true");
 
         const density = siteSettings.user_fingerprint_visual_density;
         const tileSize = `${density * 8}px ${density * 8}px`;
-        // The overlay uses mix-blend-mode: difference (see the stylesheet),
-        // so amplitude is carried by the blue value itself, not by element
-        // opacity: painting rgb(0 0 k) subtracts exactly k from the blue
-        // channel of whatever is underneath, on light and dark themes
-        // alike. Map the per-mille opacity setting to k: the default 8
-        // gives k=2, and even setting 4 (k=1 — a single blue level, the
-        // smallest difference an 8-bit display can show) still extracts
-        // from PNG and JPEG-q70 screenshots because the periodic fold
-        // averages the signal over every tile repetition.
-        const amplitude = Math.max(
-          1,
-          Math.round((siteSettings.user_fingerprint_visual_opacity / 1000) * 255)
-        );
-        overlay.style.backgroundColor = `rgb(0 0 ${amplitude})`;
+        updatePaint();
         overlay.style.maskImage = maskUrl;
         overlay.style.maskSize = tileSize;
 
@@ -141,16 +174,30 @@ export default {
     if (textEnabled) {
       document.addEventListener("copy", onCopy);
     }
+    if (visualEnabled) {
+      window.addEventListener("beforeprint", beforePrint);
+      window.addEventListener("afterprint", afterPrint);
+      printMedia.addEventListener("change", printMediaChanged);
+    }
 
     this._cleanup = () => {
+      destroyed = true;
       removeOverlay();
       if (textEnabled) {
         document.removeEventListener("copy", onCopy);
+      }
+      if (visualEnabled) {
+        window.removeEventListener("beforeprint", beforePrint);
+        window.removeEventListener("afterprint", afterPrint);
+        printMedia.removeEventListener("change", printMediaChanged);
       }
     };
 
     withPluginApi((api) => {
       api.onPageChange(() => {
+        if (destroyed) {
+          return;
+        }
         activeHere = overlayActive();
 
         if (visualEnabled && activeHere) {
